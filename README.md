@@ -9,6 +9,15 @@
 It's "virtualizing" code into instructions which only [MirrorVM](https://github.com/TheHellTower/MirrorVM) can understand so no begginer in code that decompile your program can understand what is happening(`fool moment`) !
 This will be a `1:1` VM it mean each opcode will be "reflected"(`unlike with Custom OPCodes which make it harder to understand and devirtualize`, ex: [Conv_R4](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes.conv_r4) & [Conv_R8](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes.conv_r8) being handled by a single `CustomConv` OPCode built especally for the VM)
 
+[MirrorVM](https://github.com/TheHellTower/MirrorVM) will be built so that people can learn from it, it's not recommended to compile it for real-world use, other obfuscation techniques would maybe bring this VM to its full potential.
+
+[Eazfuscator](https://help.gapotchenko.com/eazfuscator.net/30/virtualization#Virtualization_Introduction) describes perfectly what a vm does:<br>
+_"Many of us consider particular pieces of code especially important. May it be a license code check algorithm implementation, an innovative optimization method, or anything else equally important so we would want to protect it by any means possible. As we know, the traditional obfuscation techniques basically do renaming of symbols and encryption, thus leaving the actual algorithms — cycles, conditional branches and arithmetics potentially naked to eye of the skilled intruder._
+
+_Here a radical approach may be useful: to remove all the .NET bytecode instructions from an assembly, and replace it with something completely different and unknown to an external observer, but functionally equivalent to the original algorithm during runtime — this is what the code virtualization actually is."_
+
+<br>
+
 ## 💡 Features
 
 - [ ] Virtualization
@@ -89,3 +98,7 @@ Obviously, bots doesn't count and will be blocked.
 
     Note: Only for questions no code support.
 </details>
+
+# 📢 Credits
+
+- [@Hexk](https://github.com/hexck) for [Hex-Virtualization](https://github.com/hexck/Hex-Virtualization) (`A part of the readme is from there`)
