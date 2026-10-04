@@ -111,9 +111,10 @@ remains open, and let readers follow and assess the VM's progress over time.
 
 ## Blog
 
-The static site is in [`docs/blog`](docs/blog/README.md). GitHub Pages must be
-enabled and configured to publish from `docs`; each page's copy-link button
-uses its current browser URL.
+Read the [MirrorVM blog](https://thehelltower.github.io/MirrorVM). The static
+site is in [`docs/blog`](docs/blog/README.md). GitHub Pages must be enabled and
+configured to publish from `docs`; each page's copy-link button uses its
+current browser URL.
 
 ## License
 
