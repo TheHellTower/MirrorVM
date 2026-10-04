@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The first MirrorVM protector rewrites supported static method bodies and leaves methods with unsupported opcodes unchanged.">
+  <title>A first protect-and-rewrite path — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="../index.html">Notes</a>
+        <a class="active" href="method-virtualization.html">Virtualization</a>
+        <a href="compatibility-matrix.html">Compatibility</a>
+        <a href="integer-arithmetic.html">Arithmetic</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>Release milestone</span><span>27 September 2026</span></div>
+      <h1>A first protect-and-rewrite path</h1>
+      <p class="article-deck">MirrorVM has moved from an arithmetic interpreter to a small executable protector: read managed assemblies, translate supported static methods, replace those method bodies with calls to the VM, and write a sibling output.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <h2>One command, a sibling output</h2>
+        <pre><code>MirrorVM.exe C:\apps\FileToProtect.dll</code></pre>
+        <p>The tool writes <code>C:\apps\FileToProtect_MVM.dll</code>. Managed Framework executables can be passed as <code>.exe</code> inputs and get a sibling <code>_MVM.exe</code>. A modern .NET apphost is native; pass its managed DLL instead.</p>
+        <p>For each supported method, the new body builds its serialized bytecode and an <code>object[]</code> containing the original arguments. It calls <code>VirtualMachine.Execute(byte[], object[])</code>, which returns one object. The stub casts or unboxes that result according to the method's declared return type. There is no separate typed entrypoint for strings or integers.</p>
+
+        <h2>Supported methods are translated as a unit</h2>
+        <p>This first converter accepts static, non-generic methods without locals or exception handlers, with at most 256 parameters. Parameters and returns must be <code>Int32</code>, <code>UInt32</code>, or <code>String</code>. The supported CIL subset is argument loads, I4 constants, <code>ldstr</code>, the implemented arithmetic operations, <code>neg</code>, <code>nop</code>, and a final <code>ret</code>.</p>
+        <p>The converter builds a candidate bytecode sequence for a method and replaces the body only when the whole method passes those checks. If a method uses an unsupported opcode, its original body stays in place and the CLI reports the method and opcode. There is no partial rewrite. Calls and branches remain unsupported at this stage.</p>
+        <pre><code>Virtualized methods: 5
+  ...::Add
+  ...::AddUnsigned
+  ...::Subtract
+  ...::AddThenSubtract
+  ...::MyString
+Skipped methods: 3
+  ...::Main — requires an Int32, UInt32, or String return type
+  ...::UnsupportedBranch — contains unsupported CIL opcode 'ble.s'
+  ...::UnsupportedCall — contains unsupported CIL opcode 'call'</code></pre>
+        <p>The sample's <code>UnsupportedBranch</code> and <code>UnsupportedCall</code> bodies remain ordinary CIL. The other five methods use the runtime. If an input has no supported methods, MirrorVM writes no protected assembly and prints the skip reasons.</p>
+
+        <h2>Keep the runtime easy to inspect</h2>
+        <p>The runtime has one <code>Stack&lt;object&gt;</code> and one <code>Push</code>/<code>Pop</code> pair. Each handler performs its stack effect. The interpreter reads bytecode IDs and dispatches to registered handler objects; execution does not allocate an opcode object per instruction. Each handler's class name follows the CIL opcode it serves.</p>
+        <p>This structure is meant to be identifiable and traceable. It helps a reverse engineer follow a protected method from its rewritten stub, through bytecode dispatch, into the corresponding handler. MirrorVM includes no anti-debugging, anti-tamper, or concealment feature.</p>
+
+        <h2>Verification and boundaries</h2>
+        <p>The Release solution builds the runtime for <code>net20</code>, <code>netstandard2.0</code>, and <code>net9.0</code>. The 13 automated tests run through the common <code>Execute</code> entrypoint on .NET 9. The protected sample has also run on Framework 2.0 and 4.8.1, Core 3.1, and .NET 9. Those checkpoints do not establish behavior on every intermediate Framework release.</p>
+        <p>Assemblies carrying a strong-name public key and mixed-mode assemblies are rejected; the tool does not accept a signing key to re-sign rewritten output. Native apphosts are also rejected. For modern .NET inputs, runtime/deps sidecars are renamed and updated, and a compatible <code>MirrorVM.Runtime.dll</code> is placed next to the result.</p>
+        <p>The project targets .NET 9 for its virtualizer and tests to match the available Visual Studio baseline. The wider ambition remains .NET Framework 2.0 through 4.8.1 and modern .NET through 10. Each additional runtime needs direct verification before its support can be claimed.</p>
+
+        <div class="fact-box">
+          <strong>Protected sample output</strong>
+          <p>Framework 2.0, Framework 4.8.1, .NET Core 3.1, and .NET 9 each printed <code>42</code>, <code>42</code>, <code>42</code>, <code>42</code>, and <code>Test</code>.</p>
+        </div>
+
+        <div class="article-end">
+          <p><a href="../index.html">← Back to all notes</a></p>
+        </div>
+      </div>
+
+      <nav class="post-nav" aria-label="Adjacent articles">
+        <a href="integer-arithmetic.html">← Arithmetic and strings</a>
+        <a href="compatibility-matrix.html">Compatibility matrix →</a>
+      </nav>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>Input: managed .NET exe/dll<br>Output: sibling _MVM exe/dll<br>Shared runtime entrypoint: Execute(byte[], object[])<br>Sample: 5 converted, 3 skipped</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="../index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="../site.js" defer></script>
+</body>
+</html>

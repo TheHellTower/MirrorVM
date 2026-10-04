@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How MirrorVM maps arithmetic and Ldstr into bytecode, uses one object stack, and returns typed method results through one Execute entrypoint.">
+  <title>Arithmetic and strings through one bytecode path — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="../index.html">Notes</a>
+        <a href="method-virtualization.html">Virtualization</a>
+        <a href="compatibility-matrix.html">Compatibility</a>
+        <a class="active" href="integer-arithmetic.html">Arithmetic</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>VM foundations</span><span>27 September 2026</span></div>
+      <h1>Arithmetic and strings through one bytecode path</h1>
+      <p class="article-deck">MirrorVM now converts a small set of CIL method bodies into readable bytecode. The runtime dispatches to CIL-named handlers over one shared stack, and every protected method calls the same object-returning Execute method.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <p>The VM has one <code>Stack&lt;object&gt;</code>. Load instructions push values with <code>Push</code>. Arithmetic handlers pop their operands with <code>Pop</code>, calculate one result, and push that result. There is no numeric-only stack API. The interpreter reads bytecode IDs and calls handlers from a registry; handler instances are created outside the execution loop.</p>
+
+        <h2>From C# to MirrorVM bytecode</h2>
+        <p>These small methods are part of the sample:</p>
+        <pre><code>static int Add(int left, int right)
+{
+    return left + right;
+}
+
+static int Subtract(int left, int right)
+{
+    return left - right;
+}
+
+static int AddThenSubtract(int left, int right, int adjustment)
+{
+    return left + right - adjustment;
+}
+
+static string MyString()
+{
+    return "Test";
+}</code></pre>
+
+        <p>For <code>Add</code>, the converter reads the CIL argument loads and <code>add</code>, then emits:</p>
+        <pre><code>01 00    LoadArgument 0
+01 01    LoadArgument 1
+10       Add</code></pre>
+        <p><code>LoadArgument</code> uses opcode ID <code>0x01</code> followed by a one-byte argument index. Each load pushes that argument. <code>Add</code> has ID <code>0x10</code>, pops right then left, calculates <code>left + right</code>, and pushes one result. The CIL <code>ret</code> is consumed by the converter; the VM program ends when its byte array ends.</p>
+
+        <p><code>Subtract</code> changes the last byte to <code>0x13</code> (<code>Sub</code>). The three-argument method becomes:</p>
+        <pre><code>01 00    LoadArgument 0
+01 01    LoadArgument 1
+10       Add
+01 02    LoadArgument 2
+13       Sub</code></pre>
+        <p>For <code>(40 + 4) - 2</code>, the stack evolves as <code>[40]</code>, <code>[40, 4]</code>, <code>[44]</code>, <code>[44, 2]</code>, then <code>[42]</code>. Each arithmetic handler leaves its own output on that same stack.</p>
+
+        <h2>String values use the same return path</h2>
+        <p><code>MyString</code> compiles to CIL <code>ldstr "Test"</code> followed by <code>ret</code>. The converter stores UTF-8 as a four-byte little-endian byte count followed by those bytes:</p>
+        <pre><code>03                Ldstr opcode ID
+04 00 00 00       UTF-8 byte count: 4
+54 65 73 74       UTF-8 bytes: "Test"</code></pre>
+        <p><code>Ldstr</code> pushes the decoded string. <code>VirtualMachine.Execute(byte[], object[])</code> returns the one value left on the stack as <code>object</code>. A rewritten <code>string</code> method casts that object back to <code>string</code>; an <code>Int32</code> or <code>UInt32</code> method unboxes the I4 result. This is one runtime entrypoint for all supported result types.</p>
+
+        <h2>Arithmetic names and behavior</h2>
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead><tr><th>Bytecode ID</th><th>CIL operation</th><th>Handler</th></tr></thead>
+            <tbody>
+              <tr><td><code>0x10</code></td><td><code>add</code></td><td><code>Add</code></td></tr>
+              <tr><td><code>0x11</code>, <code>0x12</code></td><td><code>add.ovf</code>, <code>add.ovf.un</code></td><td><code>AddOvf</code>, <code>AddOvfUn</code></td></tr>
+              <tr><td><code>0x13</code>, <code>0x14</code>, <code>0x15</code></td><td><code>sub</code>, <code>sub.ovf</code>, <code>sub.ovf.un</code></td><td><code>Sub</code>, <code>SubOvf</code>, <code>SubOvfUn</code></td></tr>
+              <tr><td><code>0x16</code>, <code>0x17</code>, <code>0x18</code></td><td><code>mul</code>, <code>mul.ovf</code>, <code>mul.ovf.un</code></td><td><code>Mul</code>, <code>MulOvf</code>, <code>MulOvfUn</code></td></tr>
+              <tr><td><code>0x19</code>, <code>0x1A</code></td><td><code>div</code>, <code>div.un</code></td><td><code>Div</code>, <code>DivUn</code></td></tr>
+              <tr><td><code>0x1B</code>, <code>0x1C</code></td><td><code>rem</code>, <code>rem.un</code></td><td><code>Rem</code>, <code>RemUn</code></td></tr>
+              <tr><td><code>0x1D</code></td><td><code>neg</code></td><td><code>Neg</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>For integer operands, the opcode selects signed or unsigned behavior. The runtime arithmetic helper accepts normalized I4 and I8 values, native integers at process pointer width, <code>float</code>, <code>double</code>, and a documented <code>decimal</code> extension. Tests also cover smaller integral types, <code>bool</code>, <code>char</code>, enums, and <code>uint</code>/<code>ulong</code> bit patterns through the same bytecode interpreter.</p>
+        <p>That runtime test coverage is broader than the method converter. The converter currently accepts only <code>Int32</code>, <code>UInt32</code>, and <code>String</code> parameters and return types. It does not yet virtualize methods whose signatures use <code>Int64</code>, floating-point, or native integer values. This is a first protected slice, not complete CLR numeric emulation.</p>
+
+        <h2>How the helper compares with HexVM's NumericHelper</h2>
+        <p>MirrorVM's <code>NumericArithmetic</code> is an independent, focused helper, not a copy or drop-in replacement for HexVM's <code>NumericHelper</code>. For this milestone it normalizes small signed/unsigned values, booleans, characters, enums, 32-bit and 64-bit integers, native integers, floating-point values, and the explicit decimal extension. It implements the arithmetic handlers listed above, including checked and unsigned integer forms.</p>
+        <p>The helper's operation surface is narrower than a general numeric utility: it does not provide comparison, truthiness, bitwise, shift, or general conversion opcode families. It also does not cover <code>Half</code>, <code>Int128</code>, <code>UInt128</code>, <code>BigInteger</code>, or every legal CLI stack pairing. Its tests verify the implemented slice; they do not prove complete CLR compliance.</p>
+
+        <h2>Unsupported opcodes leave the method unchanged</h2>
+        <p>The sample includes a branch method and a method that calls <code>Add</code>. Branches and <code>Call</code> are not implemented in this VM version, so the converter reports <code>UnsupportedBranch — contains unsupported CIL opcode 'ble.s'</code> and <code>UnsupportedCall — contains unsupported CIL opcode 'call'</code>. It leaves those method bodies as they were. The supported arithmetic and string methods are still converted.</p>
+
+        <div class="fact-box">
+          <strong>Verified in this milestone</strong>
+          <p>The Release CLI converted five sample methods and reported three skipped methods. The protected sample printed <code>42</code>, <code>42</code>, <code>42</code>, <code>42</code>, and <code>Test</code> on .NET Framework 2.0, Framework 4.8.1, .NET Core 3.1, and .NET 9. All 13 automated test cases passed on .NET 9.</p>
+        </div>
+
+        <p>Stable opcode IDs and visible stack effects make the execution path straightforward to inspect and emulate. That supports reverse engineering and defensive research. It is not a guarantee that every downstream use is benign.</p>
+
+        <div class="article-end">
+          <p><a href="../index.html">← Back to all notes</a></p>
+        </div>
+      </div>
+
+      <nav class="post-nav" aria-label="Adjacent articles">
+        <a href="compatibility-matrix.html">← Compatibility targets</a>
+        <a href="method-virtualization.html">Method virtualization →</a>
+      </nav>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>VM stack: one Stack&lt;object&gt;<br>Execution: bytecode → registered handlers<br>Arithmetic handlers: 14<br>V1 signature kinds: Int32, UInt32, String<br>Tests: 13 on .NET 9</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="../index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="../site.js" defer></script>
+</body>
+</html>

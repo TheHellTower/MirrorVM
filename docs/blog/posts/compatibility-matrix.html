@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MirrorVM's .NET Framework 2.0 through 4.8.1 and modern .NET through 10 compatibility goal, target frameworks, and verified protected sample runs.">
+  <title>Compatibility is a target matrix, not a checkbox — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="../index.html">Notes</a>
+        <a href="method-virtualization.html">Virtualization</a>
+        <a class="active" href="compatibility-matrix.html">Compatibility</a>
+        <a href="integer-arithmetic.html">Arithmetic</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>Compatibility</span><span>27 September 2026</span></div>
+      <h1>Compatibility is a target matrix, not a checkbox</h1>
+      <p class="article-deck">MirrorVM's goal spans .NET Framework 2.0 through 4.8.1 and modern .NET. The runtime now builds for .NET Framework 2.0, .NET Standard 2.0, and .NET 9; these build targets and a few verified runs are evidence, not proof of every release in between.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <p>One framework target does not cover every consumer. The runtime includes a <code>net20</code> build for the oldest CLR surface, a <code>netstandard2.0</code> build for .NET Core and newer Framework consumers, and a <code>net9.0</code> build for the current runtime. The virtualizer itself targets .NET 9 to match the Visual Studio baseline for this project.</p>
+
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead><tr><th>Target</th><th>Purpose</th><th>Evidence in this milestone</th></tr></thead>
+            <tbody>
+              <tr><td><code>net20</code></td><td>Oldest runtime library and Framework 2.0 sample</td><td>Built; protected sample ran on .NET Framework 2.0.</td></tr>
+              <tr><td><code>netstandard2.0</code></td><td>Shared contract for .NET Core and later Framework consumers</td><td>Built; protected samples ran on .NET Framework 4.8.1 and .NET Core 3.1.</td></tr>
+              <tr><td><code>net9.0</code></td><td>Virtualizer, tests, and current sample target</td><td>Built; 13 automated test cases passed; protected sample ran on .NET 9.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Builds and runs answer different questions</h2>
+        <p>The runtime builds for all three targets. The protected sample also demonstrates the actual rewrite: its supported arithmetic and string methods call the generic runtime entrypoint, and each output prints <code>42</code>, <code>42</code>, <code>42</code>, <code>42</code>, then <code>Test</code>. The same protected sample was run on Framework 2.0, Framework 4.8.1, Core 3.1, and .NET 9.</p>
+        <p>Those checks cover the oldest Framework endpoint and the current Framework endpoint. They do not establish behavior on every intermediate Framework release. Framework versions from 2.0 through 4.8.1 remain the project goal; the current runtime targets provide candidate compatibility paths that still need broader runtime testing.</p>
+        <div class="fact-box">
+          <strong>Current verification boundary</strong>
+          <p>The Release solution build and all 13 automated tests target .NET 9. The protected sample ran on Framework 2.0 and 4.8.1, Core 3.1, and .NET 9. Core 3.1 is out of support and appears only as a compatibility checkpoint. .NET 10 is not a project target because this Visual Studio setup uses .NET 9; no .NET 10 runtime claim is made here.</p>
+        </div>
+
+        <h2>Why the old target is separate</h2>
+        <p>.NET Standard 2.0 does not cover Framework 2.0, so the runtime is also compiled against the older framework surface. The virtualizer bundles that <code>net20</code> runtime beside a protected output when one is not already present. The protected methods use ordinary arrays, boxing, and a call to <code>Execute(byte[], object[])</code>, keeping their rewritten stubs simple enough for the old target.</p>
+        <p>For Framework 4.6.1 and later, .NET Standard 2.0 is the intended shared library path. Microsoft's documentation notes that .NET Framework 4.6.1 has known .NET Standard consumption issues and recommends 4.7.2 or later. See <a href="https://learn.microsoft.com/dotnet/standard/net-standard?tabs=net-standard-2-0">Microsoft's .NET Standard support matrix</a> and <a href="https://learn.microsoft.com/en-us/dotnet/core/porting/framework-overview">the .NET Framework porting overview</a>.</p>
+
+        <h2>Keep the compatibility claim narrow</h2>
+        <p>The shared runtime source currently uses APIs available in .NET Framework 2.0, but each new feature can add differences in reflection, encoding, numeric conversions, exception behavior, or IL verification. The converter also intentionally supports only a small method-body subset. A method containing an unsupported opcode is left unchanged and reported; an application may therefore contain both virtualized and ordinary methods.</p>
+
+        <div class="article-end">
+          <p><a href="../index.html">← Back to all notes</a></p>
+        </div>
+      </div>
+
+      <nav class="post-nav" aria-label="Adjacent articles">
+        <a href="method-virtualization.html">← Virtualization path</a>
+        <a href="integer-arithmetic.html">Arithmetic and strings →</a>
+      </nav>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>Runtime TFMs: net20, netstandard2.0, net9.0<br>CLI/test TFM: net9.0<br>Protected sample runs: Framework 2.0/4.8.1, Core 3.1, .NET 9<br>Intermediate Framework releases: not individually verified</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="../index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="../site.js" defer></script>
+</body>
+</html>

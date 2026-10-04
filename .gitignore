@@ -1,0 +1,8 @@
+.vs/
+obj/
+Release/
+TestResults/
+*.user
+*.suo
+THT/
+check.bat
