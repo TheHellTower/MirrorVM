@@ -47,21 +47,6 @@ namespace MirrorVM.Protector
 
             string runtimePath = Path.Combine(Path.GetDirectoryName(fullInputPath), RuntimeFileName);
             bool runtimeAlreadyAvailable = File.Exists(runtimePath);
-            if (runtimeAlreadyAvailable && !HasCompatibleRuntime(runtimePath))
-            {
-                throw new IOException(
-                    "The output directory contains an incompatible " + RuntimeFileName + ". " +
-                    "Move that file or use an output directory with a compatible MirrorVM runtime.");
-            }
-
-            List<string> sidecars = GetSidecarPaths(fullInputPath, outputPath);
-            for (int index = 0; index < sidecars.Count; index++)
-            {
-                if (File.Exists(sidecars[index]))
-                {
-                    throw new IOException("An output sidecar already exists: " + sidecars[index]);
-                }
-            }
 
             List<string> convertedMethods = new List<string>();
             List<string> skippedMethods = new List<string>();
@@ -147,11 +132,6 @@ namespace MirrorVM.Protector
                 {
                     string bundledRuntime = Path.Combine(
                         AppContext.BaseDirectory, "runtime", "net20", RuntimeFileName);
-                    if (!File.Exists(bundledRuntime))
-                    {
-                        throw new FileNotFoundException("The bundled .NET 2.0-compatible runtime was not found.", bundledRuntime);
-                    }
-
                     File.Copy(bundledRuntime, temporaryRuntimePath, false);
                     File.Move(temporaryRuntimePath, runtimePath);
                     installedFiles.Add(runtimePath);
@@ -277,25 +257,6 @@ namespace MirrorVM.Protector
         private static string FormatMethodName(TypeDef type, MethodDef method)
         {
             return type.FullName + "::" + method.Name;
-        }
-
-        private static List<string> GetSidecarPaths(string inputPath, string outputPath)
-        {
-            List<string> paths = new List<string>();
-            string inputBase = Path.Combine(Path.GetDirectoryName(inputPath), Path.GetFileNameWithoutExtension(inputPath));
-            string outputBase = Path.Combine(Path.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath));
-            string[] suffixes = { ".runtimeconfig.json", ".deps.json", ".config" };
-
-            for (int index = 0; index < suffixes.Length; index++)
-            {
-                string inputSidecar = inputBase + suffixes[index];
-                if (File.Exists(inputSidecar))
-                {
-                    paths.Add(outputBase + suffixes[index]);
-                }
-            }
-
-            return paths;
         }
 
         private static void PrepareSidecars(
@@ -445,50 +406,9 @@ namespace MirrorVM.Protector
             return version.Major + "." + version.Minor + "." + Math.Max(0, version.Build);
         }
 
-        private static bool HasCompatibleRuntime(string path)
-        {
-            try
-            {
-                using (ModuleDefMD module = ModuleDefMD.Load(path))
-                {
-                    if (module.Assembly == null || module.Assembly.Name != RuntimeAssemblyName ||
-                        module.Assembly.Version != typeof(VirtualMachine).Assembly.GetName().Version)
-                    {
-                        return false;
-                    }
-
-                    foreach (TypeDef type in module.GetTypes())
-                    {
-                        if (type.FullName != "MirrorVM.VirtualMachine")
-                        {
-                            continue;
-                        }
-
-                        foreach (MethodDef method in type.Methods)
-                        {
-                            if (method.Name == "Execute" && method.IsStatic && method.MethodSig != null &&
-                                method.MethodSig.RetType.FullName == "System.Object" &&
-                                method.MethodSig.Params.Count == 2 &&
-                                method.MethodSig.Params[0].FullName == "System.Byte[]" &&
-                                method.MethodSig.Params[1].FullName == "System.Object[]")
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                return false;
-            }
-
-            return false;
-        }
-
         private static void DeleteIfExists(string path)
         {
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            if (!string.IsNullOrEmpty(path))
             {
                 File.Delete(path);
             }

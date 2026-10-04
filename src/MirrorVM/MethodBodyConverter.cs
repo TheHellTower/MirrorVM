@@ -51,16 +51,17 @@ namespace MirrorVM.Protector
                 return false;
             }
 
-            if (method.MethodSig.Params.Count > 256)
+            int parameterCount = method.MethodSig.Params.Count;
+            if (parameterCount > 256)
             {
                 reason = "has more than 256 parameters";
                 return false;
             }
 
-            foreach (TypeSig parameterType in method.MethodSig.Params)
+            StackValueKind[] parameterKinds = new StackValueKind[parameterCount];
+            for (int index = 0; index < parameterCount; index++)
             {
-                StackValueKind parameterKind;
-                if (!TryGetValueKind(parameterType, out parameterKind))
+                if (!TryGetValueKind(method.MethodSig.Params[index], out parameterKinds[index]))
                 {
                     reason = "requires only Int32, UInt32, or String parameters";
                     return false;
@@ -89,10 +90,9 @@ namespace MirrorVM.Protector
                 }
 
                 int argumentIndex;
-                if (TryGetArgumentIndex(method, instruction, out argumentIndex))
+                if (TryGetArgumentIndex(instruction, out argumentIndex))
                 {
-                    if (argumentIndex < 0 || argumentIndex >= method.MethodSig.Params.Count ||
-                        argumentIndex > byte.MaxValue)
+                    if (argumentIndex < 0 || argumentIndex >= parameterKinds.Length)
                     {
                         reason = "references an argument outside the bytecode range";
                         return false;
@@ -100,14 +100,7 @@ namespace MirrorVM.Protector
 
                     output.Add((byte)VirtualOpCode.LoadArgument);
                     output.Add((byte)argumentIndex);
-                    StackValueKind argumentKind;
-                    if (!TryGetValueKind(method.MethodSig.Params[argumentIndex], out argumentKind))
-                    {
-                        reason = "loads an unsupported method argument";
-                        return false;
-                    }
-
-                    stack.Add(argumentKind);
+                    stack.Add(parameterKinds[argumentIndex]);
                     continue;
                 }
 
@@ -200,14 +193,20 @@ namespace MirrorVM.Protector
 
         private static bool TryGetValueKind(TypeSig type, out StackValueKind kind)
         {
-            if (type != null &&
-                (type.FullName == "System.Int32" || type.FullName == "System.UInt32"))
+            if (type == null)
+            {
+                kind = default(StackValueKind);
+                return false;
+            }
+
+            string fullName = type.FullName;
+            if (fullName == "System.Int32" || fullName == "System.UInt32")
             {
                 kind = StackValueKind.Int32;
                 return true;
             }
 
-            if (type != null && type.FullName == "System.String")
+            if (fullName == "System.String")
             {
                 kind = StackValueKind.String;
                 return true;
@@ -217,7 +216,7 @@ namespace MirrorVM.Protector
             return false;
         }
 
-        private static bool TryGetArgumentIndex(MethodDef method, Instruction instruction, out int index)
+        private static bool TryGetArgumentIndex(Instruction instruction, out int index)
         {
             switch (instruction.OpCode.Code)
             {

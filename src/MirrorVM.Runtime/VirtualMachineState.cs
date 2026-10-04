@@ -40,7 +40,7 @@ namespace MirrorVM
 
         internal bool HasRemainingByteCode
         {
-            get { return _byteCode != null && _instructionPointer < _byteCode.Length; }
+            get { return _instructionPointer < _byteCode.Length; }
         }
 
         public byte ReadByte()
@@ -83,7 +83,7 @@ namespace MirrorVM
         public string ReadString()
         {
             int byteCount = ReadInt32();
-            if (byteCount < 0 || _byteCode == null || byteCount > _byteCode.Length - _instructionPointer)
+            if (byteCount < 0 || byteCount > _byteCode.Length - _instructionPointer)
             {
                 throw new InvalidProgramException("The Ldstr operand is truncated or has an invalid length.");
             }
