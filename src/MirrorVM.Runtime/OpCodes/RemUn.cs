@@ -1,13 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+using System;
+
 namespace MirrorVM.OpCodes
 {
-    public sealed class RemUn : BinaryArithmeticOpCode
+    public sealed class RemUn : IOpCode
     {
-        public override string Name { get { return "RemUn"; } }
-
-        protected override object Calculate(object left, object right)
+        public string Name
         {
-            return NumericArithmetic.Apply(ArithmeticOperation.RemainderUnsigned, left, right);
+            get { return "RemUn"; }
+        }
+
+        public void Execute(VirtualMachineState state)
+        {
+            if (state == null)
+            {
+                throw new ArgumentNullException("state");
+            }
+
+            if (state.StackCount < 2)
+            {
+                throw new InvalidProgramException(Name + " requires two values on the VM stack.");
+            }
+
+            object right = state.Pop();
+            object left = state.Pop();
+            object result;
+
+            try
+            {
+                result = NumericArithmetic.Apply(ArithmeticOperation.RemainderUnsigned, left, right);
+            }
+            catch
+            {
+                state.Push(left);
+                state.Push(right);
+                throw;
+            }
+
+            state.Push(result);
         }
     }
 }
