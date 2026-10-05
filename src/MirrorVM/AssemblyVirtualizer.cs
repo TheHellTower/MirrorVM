@@ -97,28 +97,8 @@ namespace MirrorVM.Protector
 
                     if (convertedMethods.Count == 0)
                     {
-                        StringBuilder message = new StringBuilder();
-                        message.Append(
-                            "No supported methods were found. No output was written. " +
-                            "Methods must be static, non-generic, have no locals or exception handlers, " +
-                            "use Int32/UInt32/String parameters and returns, and contain only supported " +
-                            "argument loads, Int32 constants, ldstr, arithmetic opcodes, nop, and ret.");
-
-                        int detailsCount = Math.Min(8, skippedMethods.Count);
-                        for (int index = 0; index < detailsCount; index++)
-                        {
-                            message.AppendLine();
-                            message.Append("  ");
-                            message.Append(skippedMethods[index]);
-                        }
-
-                        if (skippedMethods.Count > detailsCount)
-                        {
-                            message.AppendLine();
-                            message.Append("  ... and ");
-                            message.Append(skippedMethods.Count - detailsCount);
-                            message.Append(" more skipped methods");
-                        }
+                        StringBuilder message = new StringBuilder("No supported methods were found. No output was written.");
+                        MethodListFormatter.AppendIndented(message, skippedMethods);
 
                         throw new InvalidOperationException(message.ToString());
                     }
@@ -214,27 +194,44 @@ namespace MirrorVM.Protector
                 body.Instructions.Add(Instruction.Create(OpCodes.Dup));
                 body.Instructions.Add(Instruction.Create(OpCodes.Ldc_I4, index));
                 body.Instructions.Add(CreateLoadArgument(method, index));
-                string argumentType = method.MethodSig.Params[index].FullName;
-                if (argumentType == "System.Int32")
+                TypeSig argumentType = method.MethodSig.Params[index];
+                if (argumentType.FullName != "System.String")
                 {
-                    body.Instructions.Add(Instruction.Create(OpCodes.Box, module.CorLibTypes.Int32.TypeDefOrRef));
-                }
-                else if (argumentType == "System.UInt32")
-                {
-                    body.Instructions.Add(Instruction.Create(OpCodes.Box, module.CorLibTypes.UInt32.TypeDefOrRef));
+                    body.Instructions.Add(Instruction.Create(OpCodes.Box, argumentType.ToTypeDefOrRef()));
                 }
 
                 body.Instructions.Add(Instruction.Create(OpCodes.Stelem_Ref));
             }
 
             body.Instructions.Add(Instruction.Create(OpCodes.Call, runtimeEntryPoint));
-            if (method.MethodSig.RetType.FullName == "System.String")
+            string returnType = method.MethodSig.RetType.FullName;
+            if (returnType == "System.String")
             {
                 body.Instructions.Add(Instruction.Create(OpCodes.Castclass, module.CorLibTypes.String.TypeDefOrRef));
             }
+            else if (returnType == "System.Int64" || returnType == "System.UInt64")
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, module.CorLibTypes.Int64.TypeDefOrRef));
+            }
+            else if (returnType == "System.IntPtr" || returnType == "System.UIntPtr")
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, module.CorLibTypes.IntPtr.TypeDefOrRef));
+            }
+            else if (returnType == "System.Single")
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, module.CorLibTypes.Double.TypeDefOrRef));
+                body.Instructions.Add(Instruction.Create(OpCodes.Conv_R4));
+            }
+            else if (returnType == "System.Double")
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, module.CorLibTypes.Double.TypeDefOrRef));
+            }
+            else if (returnType == "System.Decimal")
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, method.MethodSig.RetType.ToTypeDefOrRef()));
+            }
             else
             {
-                // The VM boxes I4 values as Int32, including UInt32 bit patterns.
                 body.Instructions.Add(Instruction.Create(OpCodes.Unbox_Any, module.CorLibTypes.Int32.TypeDefOrRef));
             }
 
@@ -408,7 +405,7 @@ namespace MirrorVM.Protector
 
         private static void DeleteIfExists(string path)
         {
-            if (!string.IsNullOrEmpty(path))
+            if (path != null)
             {
                 File.Delete(path);
             }

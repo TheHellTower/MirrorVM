@@ -16,41 +16,41 @@
         <span class="brand-name">MirrorVM <b>Field Notes</b></span>
       </a>
       <nav aria-label="Main navigation">
-        <a href="../index.html">Notes</a>
         <a href="method-virtualization.html">Virtualization</a>
         <a class="active" href="compatibility-matrix.html">Compatibility</a>
-        <a href="integer-arithmetic.html">Arithmetic</a>
+        <a href="../architecture.html">Architecture</a>
       </nav>
     </div>
   </header>
 
   <main id="article" class="article-shell">
     <article class="article-main">
-      <div class="article-kicker"><span>Compatibility</span><span>27 September 2026</span></div>
+      <div class="article-kicker"><span>Compatibility</span><span>4 October 2026</span></div>
       <h1>Compatibility is a target matrix, not a checkbox</h1>
-      <p class="article-deck">MirrorVM's goal spans .NET Framework 2.0 through 4.8.1 and modern .NET. The runtime now builds for .NET Framework 2.0, .NET Standard 2.0, and .NET 9; these build targets and a few verified runs are evidence, not proof of every release in between.</p>
+      <p class="article-deck">MirrorVM's compatibility goal spans .NET Framework 2.0 through 4.8.1 and modern .NET through 10. The protected sample and numeric CLR comparisons passed the configured matrix; Framework 4.x uses the installed in-place 4.8.1 CLR.</p>
       <div class="article-rule"></div>
 
       <div class="article-body">
-        <p>One framework target does not cover every consumer. The runtime includes a <code>net20</code> build for the oldest CLR surface, a <code>netstandard2.0</code> build for .NET Core and newer Framework consumers, and a <code>net9.0</code> build for the current runtime. The virtualizer itself targets .NET 9 to match the Visual Studio baseline for this project.</p>
+        <p>The runtime builds for <code>net20</code>, <code>netstandard2.0</code>, and <code>net9.0</code>. The virtualizer and unit tests target .NET 9. The sample builds for 25 configured target frameworks. The matrix runner has 26 entries because Framework 3.0 uses the same <code>net20</code> sample on the CLR 2.0 line.</p>
 
         <div class="matrix-wrap">
           <table class="matrix">
-            <thead><tr><th>Target</th><th>Purpose</th><th>Evidence in this milestone</th></tr></thead>
+            <thead><tr><th>Execution group</th><th>Matrix entries</th><th>Result and boundary</th></tr></thead>
             <tbody>
-              <tr><td><code>net20</code></td><td>Oldest runtime library and Framework 2.0 sample</td><td>Built; protected sample ran on .NET Framework 2.0.</td></tr>
-              <tr><td><code>netstandard2.0</code></td><td>Shared contract for .NET Core and later Framework consumers</td><td>Built; protected samples ran on .NET Framework 4.8.1 and .NET Core 3.1.</td></tr>
-              <tr><td><code>net9.0</code></td><td>Virtualizer, tests, and current sample target</td><td>Built; 13 automated test cases passed; protected sample ran on .NET 9.</td></tr>
+              <tr><td>Framework 2.0–3.5</td><td><code>net20</code>, mapped <code>net30</code>, <code>net35</code></td><td>All three entries passed in x86 and x64 processes. Framework 3.0 uses the CLR 2.0 line and the <code>net20</code> sample.</td></tr>
+              <tr><td>Framework 4.0–4.8.1</td><td><code>net40</code> through <code>net481</code></td><td>All target builds and x86/x64 runs passed on the installed Framework 4.8.1 in-place CLR; separate historical 4.x runtimes were not tested.</td></tr>
+              <tr><td>.NET Core 2.0–3.1</td><td><code>netcoreapp2.0</code> through <code>netcoreapp3.1</code></td><td>All five protected sample runs and numeric CLR comparison checks passed in x86 and x64 processes.</td></tr>
+              <tr><td>.NET 5–10</td><td><code>net5.0</code> through <code>net10.0</code></td><td>All six protected sample runs and numeric CLR comparison checks passed in x86 and x64 processes.</td></tr>
             </tbody>
           </table>
         </div>
 
         <h2>Builds and runs answer different questions</h2>
-        <p>The runtime builds for all three targets. The protected sample also demonstrates the actual rewrite: its supported arithmetic and string methods call the generic runtime entrypoint, and each output prints <code>42</code>, <code>42</code>, <code>42</code>, <code>42</code>, then <code>Test</code>. The same protected sample was run on Framework 2.0, Framework 4.8.1, Core 3.1, and .NET 9.</p>
-        <p>Those checks cover the oldest Framework endpoint and the current Framework endpoint. They do not establish behavior on every intermediate Framework release. Framework versions from 2.0 through 4.8.1 remain the project goal; the current runtime targets provide candidate compatibility paths that still need broader runtime testing.</p>
+        <p>Each matrix run protects the sample, executes its rewritten arithmetic, string, and numeric methods, and runs a DynamicMethod CLR comparison for every implemented numeric opcode. Any difference in result or exception stops the sample. All 26 configured entries passed at both pointer widths, for 52 protected sample runs.</p>
+        <p>Framework 4.x uses the machine's .NET Framework 4.8.1 in-place CLR, so those runs verify target-specific sample builds under that runtime, not the behavior of each historical 4.x runtime installed separately. The Framework 3.0 entry reuses the Framework 2.0 sample because the old SDK has no separate 3.0 reference pack.</p>
         <div class="fact-box">
-          <strong>Current verification boundary</strong>
-          <p>The Release solution build and all 13 automated tests target .NET 9. The protected sample ran on Framework 2.0 and 4.8.1, Core 3.1, and .NET 9. Core 3.1 is out of support and appears only as a compatibility checkpoint. .NET 10 is not a project target because this Visual Studio setup uses .NET 9; no .NET 10 runtime claim is made here.</p>
+          <strong>Verified scope</strong>
+          <p>The Release solution builds 25 configured sample targets. The 26-entry protected sample matrix passed in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 16 unit tests pass on the .NET 9 x64 host. Framework 4.x execution uses the installed 4.8.1 in-place CLR.</p>
         </div>
 
         <h2>Why the old target is separate</h2>
@@ -58,7 +58,7 @@
         <p>For Framework 4.6.1 and later, .NET Standard 2.0 is the intended shared library path. Microsoft's documentation notes that .NET Framework 4.6.1 has known .NET Standard consumption issues and recommends 4.7.2 or later. See <a href="https://learn.microsoft.com/dotnet/standard/net-standard?tabs=net-standard-2-0">Microsoft's .NET Standard support matrix</a> and <a href="https://learn.microsoft.com/en-us/dotnet/core/porting/framework-overview">the .NET Framework porting overview</a>.</p>
 
         <h2>Keep the compatibility claim narrow</h2>
-        <p>The shared runtime source currently uses APIs available in .NET Framework 2.0, but each new feature can add differences in reflection, encoding, numeric conversions, exception behavior, or IL verification. The converter also intentionally supports only a small method-body subset. A method containing an unsupported opcode is left unchanged and reported; an application may therefore contain both virtualized and ordinary methods.</p>
+        <p>The matrix is evidence for the implemented linear method subset and the numeric cases in the sample; it does not establish full CLR compatibility. The converter does not yet support locals, branches, calls, fields, arrays, byrefs, pointers, or exception regions. A method containing an unsupported opcode is left unchanged and reported, so an application may contain both virtualized and ordinary methods.</p>
 
         <div class="article-end">
           <p><a href="../index.html">← Back to all notes</a></p>
@@ -67,13 +67,13 @@
 
       <nav class="post-nav" aria-label="Adjacent articles">
         <a href="method-virtualization.html">← Virtualization path</a>
-        <a href="integer-arithmetic.html">Arithmetic and strings →</a>
+        <a href="../architecture.html">Architecture →</a>
       </nav>
     </article>
     <aside class="article-aside">
       <div class="aside-card">
         <p class="eyebrow">At a glance</p>
-        <p>Runtime TFMs: net20, netstandard2.0, net9.0<br>CLI/test TFM: net9.0<br>Protected sample runs: Framework 2.0/4.8.1, Core 3.1, .NET 9<br>Intermediate Framework releases: not individually verified</p>
+        <p>Runtime TFMs: net20, netstandard2.0, net9.0<br>Virtualizer/tests: net9.0<br>Matrix: 26 entries, x86 and x64<br>Framework 4.x: installed 4.8.1 in-place CLR</p>
       </div>
     </aside>
   </main>

@@ -30,6 +30,11 @@ namespace MirrorVM
 
         public object Pop()
         {
+            if (_stack.Count == 0)
+            {
+                throw new InvalidProgramException("The VM stack is empty.");
+            }
+
             return _stack.Pop();
         }
 
@@ -77,7 +82,29 @@ namespace MirrorVM
                 throw new InvalidProgramException("The bytecode references a missing method argument.");
             }
 
-            return _arguments[index];
+            return NumericArithmetic.NormalizeStackValue(_arguments[index]);
+        }
+
+        public long ReadInt64()
+        {
+            if (_byteCode == null || _instructionPointer > _byteCode.Length - 8)
+            {
+                throw new InvalidProgramException("The virtual Int64 operand is truncated.");
+            }
+
+            int low = ReadInt32();
+            int high = ReadInt32();
+            return unchecked((long)((ulong)(uint)low | ((ulong)(uint)high << 32)));
+        }
+
+        public float ReadSingle()
+        {
+            return BitConverter.ToSingle(BitConverter.GetBytes(ReadInt32()), 0);
+        }
+
+        public double ReadDouble()
+        {
+            return BitConverter.ToDouble(BitConverter.GetBytes(ReadInt64()), 0);
         }
 
         public string ReadString()

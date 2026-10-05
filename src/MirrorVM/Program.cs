@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
+using System.Text;
 using MirrorVM.Protector;
 
 namespace MirrorVM
@@ -24,17 +25,10 @@ namespace MirrorVM
                     Console.WriteLine("  " + result.ConvertedMethods[index]);
                 }
 
-                Console.WriteLine("Skipped methods: " + result.SkippedMethods.Count);
-                int detailsCount = Math.Min(8, result.SkippedMethods.Count);
-                for (int index = 0; index < detailsCount; index++)
-                {
-                    Console.WriteLine("  " + result.SkippedMethods[index]);
-                }
-
-                if (result.SkippedMethods.Count > detailsCount)
-                {
-                    Console.WriteLine("  ... and " + (result.SkippedMethods.Count - detailsCount) + " more");
-                }
+                StringBuilder skippedMethods = new StringBuilder("Skipped methods: ");
+                skippedMethods.Append(result.SkippedMethods.Count);
+                MethodListFormatter.AppendIndented(skippedMethods, result.SkippedMethods);
+                Console.WriteLine(skippedMethods.ToString());
 
                 return 0;
             }

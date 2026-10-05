@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A concise guide to MirrorVM's CIL conversion, bytecode, single VM stack, and opcode handler path.">
+  <title>How MirrorVM executes a protected method — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="posts/method-virtualization.html">Virtualization</a>
+        <a href="posts/compatibility-matrix.html">Compatibility</a>
+        <a class="active" href="architecture.html">Architecture</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>Architecture</span><span>4 October 2026</span></div>
+      <h1>How MirrorVM executes a protected method</h1>
+      <p class="article-deck">A supported CIL body becomes bytecode. A rewritten method stub sends that bytecode and its arguments through one VM entrypoint. Opcode handlers perform the work on one stack.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <h2>The execution path</h2>
+        <pre><code>Assembly method body
+        ↓
+MethodBodyConverter ── unsupported? ── keep original CIL and report why
+        ↓ supported CIL
+Serialized MirrorVM bytecode
+        ↓
+Rewritten method stub: bytecode + object[] arguments
+        ↓
+VirtualMachine.Execute(byte[], object[])
+        ↓
+One Stack&lt;object&gt; ← registered IOpCode handlers
+        ↓
+object result → cast/unbox in the rewritten method</code></pre>
+
+        <h2>Conversion decides for the whole method</h2>
+        <p>The converter reads a method's signature and instructions. It emits bytecode only when the entire body fits the implemented subset. A call, branch, local, exception region, or unsupported signature makes the converter keep the original method body and report the reason. It does not replace only part of a method.</p>
+        <p>The virtualizer writes a small stub for a converted method. The stub creates the bytecode array and an <code>object[]</code> for arguments, calls the same <code>Execute(byte[], object[])</code> method for every supported return type, then casts or unboxes the returned object to the declared type.</p>
+
+        <h2>Bytecode dispatch stays explicit</h2>
+        <p><code>Execute</code> reads one opcode ID at a time and looks up its registered <code>IOpCode</code> handler. The handler reads any operands, pops inputs, performs its operation, and pushes its result when the opcode produces one. There is one VM stack and one pair of stack operations; arithmetic does not use a separate numeric stack.</p>
+        <p>This keeps the correspondence between bytecode and behavior visible. A reader can follow an instruction to its handler and inspect the stack effect. The structure is intended to make protected code easier to study for reverse engineering and defensive research.</p>
+
+        <h2>Why the stack is not the full CLR value model yet</h2>
+        <p>The current <code>Stack&lt;object&gt;</code> represents the values in the implemented subset, including boxed integers and floating-point values, strings, native integers, and by-value <code>Decimal</code>. It does not yet represent managed byrefs, pointers, function pointers, typed references, or arbitrary value-type storage. Those values cannot all be treated as ordinary boxed objects: their lifetime, aliasing, layout, and GC behavior are part of CLR semantics.</p>
+        <p>As support grows, those representations must still fit the VM's single operand stack and shared execution path. The converter must also validate stack types, control flow, calls, prefixes, and exception regions before claiming broader compatibility.</p>
+        <p>The current numeric instruction set and representative C#-to-bytecode examples are described in <a href="posts/integer-arithmetic.html">M2 - Numeric values end to end</a>.</p>
+
+        <div class="fact-box">
+          <strong>Current implementation boundary</strong>
+          <p>The converter handles linear arithmetic and string methods plus the implemented numeric arithmetic, comparison, bitwise, shift, <code>ckfinite</code>, and <code>conv.*</code> instructions. Calls, branches, fields, arrays, object signatures, and exception handling remain unsupported. See the <a href="index.html#limits-title">current limits</a> and <a href="posts/compatibility-matrix.html">runtime evidence</a>.</p>
+        </div>
+
+        <div class="article-end">
+          <p><a href="index.html">← Back to all notes</a></p>
+        </div>
+      </div>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>Converter: whole-method decision<br>Rewritten stub: bytecode + object[]<br>Runtime: one Execute(byte[], object[])<br>Dispatch: bytecode ID → IOpCode handler<br>Operand storage: one Stack&lt;object&gt;</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="site.js" defer></script>
+</body>
+</html>

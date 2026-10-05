@@ -15,6 +15,9 @@ namespace MirrorVM.Tests
             Assert.Equal("LoadArgument", new LoadArgument().Name);
             Assert.Equal("LoadInt32", new LoadInt32().Name);
             Assert.Equal("Ldstr", new Ldstr().Name);
+            Assert.Equal("LoadInt64", new LoadInt64().Name);
+            Assert.Equal("LoadSingle", new LoadSingle().Name);
+            Assert.Equal("LoadDouble", new LoadDouble().Name);
             Assert.Equal("Add", new Add().Name);
             Assert.Equal("Sub", new Sub().Name);
             Assert.Equal("Mul", new Mul().Name);
@@ -79,6 +82,28 @@ namespace MirrorVM.Tests
         }
 
         [Fact]
+        public void NumericLoadOpcodesReadLittleEndianConstants()
+        {
+            long expectedInt64 = unchecked((long)0xFEDCBA9876543210UL);
+            byte[] int64Code = new byte[9];
+            int64Code[0] = (byte)VirtualOpCode.LoadInt64;
+            WriteInt64(int64Code, 1, expectedInt64);
+            Assert.Equal(expectedInt64, VirtualMachine.Execute(int64Code, new object[0]));
+
+            float expectedSingle = 1.25f;
+            byte[] singleCode = new byte[5];
+            singleCode[0] = (byte)VirtualOpCode.LoadSingle;
+            WriteInt32(singleCode, 1, BitConverter.ToInt32(BitConverter.GetBytes(expectedSingle), 0));
+            Assert.Equal((double)expectedSingle, VirtualMachine.Execute(singleCode, new object[0]));
+
+            double expectedDouble = -Math.PI;
+            byte[] doubleCode = new byte[9];
+            doubleCode[0] = (byte)VirtualOpCode.LoadDouble;
+            WriteInt64(doubleCode, 1, BitConverter.ToInt64(BitConverter.GetBytes(expectedDouble), 0));
+            Assert.Equal(expectedDouble, VirtualMachine.Execute(doubleCode, new object[0]));
+        }
+
+        [Fact]
         public void VmStackHasOneGenericPushAndPopPair()
         {
             VirtualMachineState state = new VirtualMachineState();
@@ -106,9 +131,8 @@ namespace MirrorVM.Tests
                 new object[] { 20L, 6L, 26L, 14L, 120L, 3L, 2L },
                 new object[] { 20UL, 6UL, 26L, 14L, 120L, 3L, 2L },
                 new object[] { true, true, 2, 0, 1, 1, 0 },
-                new object[] { 20.0f, 6.0f, 26.0f, 14.0f, 120.0f, 20.0f / 6.0f, 2.0f },
+                new object[] { 20.0f, 6.0f, 26.0, 14.0, 120.0, (double)(20.0f / 6.0f), 2.0 },
                 new object[] { 20.0, 6.0, 26.0, 14.0, 120.0, 20.0 / 6.0, 2.0 },
-                new object[] { 20.0m, 6.0m, 26.0m, 14.0m, 120.0m, 20.0m / 6.0m, 2.0m },
                 new object[] { new IntPtr(20), new IntPtr(6), new IntPtr(26), new IntPtr(14), new IntPtr(120), new IntPtr(3), new IntPtr(2) },
                 new object[] { new UIntPtr(20U), new UIntPtr(6U), new IntPtr(26), new IntPtr(14), new IntPtr(120), new IntPtr(3), new IntPtr(2) }
             };
@@ -193,8 +217,7 @@ namespace MirrorVM.Tests
             AssertBinaryThrows(VirtualOpCode.DivUn, uint.MaxValue, 0U, typeof(DivideByZeroException));
             AssertBinaryThrows(VirtualOpCode.Add, 1, 2L, typeof(InvalidOperationException));
             AssertBinaryThrows(VirtualOpCode.AddOvf, 1.0, 2.0, typeof(InvalidOperationException));
-            AssertBinaryThrows(VirtualOpCode.AddOvfUn, 1.0m, 2.0m, typeof(InvalidOperationException));
-            AssertBinaryThrows(VirtualOpCode.Add, decimal.MaxValue, 1m, typeof(OverflowException));
+            AssertBinaryThrows(VirtualOpCode.Add, decimal.MaxValue, 1m, typeof(ArgumentException));
         }
 
         [Fact]
@@ -202,7 +225,7 @@ namespace MirrorVM.Tests
         {
             AssertUnary(VirtualOpCode.Neg, int.MinValue, int.MinValue);
             AssertUnary(VirtualOpCode.Neg, 12L, -12L);
-            AssertUnary(VirtualOpCode.Neg, 1.5f, -1.5f);
+            AssertUnary(VirtualOpCode.Neg, 1.5f, -1.5d);
             AssertUnary(VirtualOpCode.Neg, 1.5, -1.5);
             AssertUnary(VirtualOpCode.Neg, new IntPtr(12), new IntPtr(-12));
         }
@@ -220,6 +243,12 @@ namespace MirrorVM.Tests
                 new byte[] { (byte)VirtualOpCode.LoadArgument, 0 }, new object[0]));
             Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
                 new byte[] { (byte)VirtualOpCode.LoadInt32, 1 }, new object[0]));
+            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+                new byte[] { (byte)VirtualOpCode.LoadInt64, 1, 2, 3, 4 }, new object[0]));
+            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+                new byte[] { (byte)VirtualOpCode.LoadSingle, 1 }, new object[0]));
+            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+                new byte[] { (byte)VirtualOpCode.LoadDouble, 1, 2, 3, 4 }, new object[0]));
             Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
                 new byte[] { (byte)VirtualOpCode.Ldstr, 4, 0, 0, 0, (byte)'T' }, new object[0]));
             Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
@@ -282,6 +311,12 @@ namespace MirrorVM.Tests
                 target[offset + 2] = (byte)(value >> 16);
                 target[offset + 3] = (byte)(value >> 24);
             }
+        }
+
+        private static void WriteInt64(byte[] target, int offset, long value)
+        {
+            WriteInt32(target, offset, unchecked((int)value));
+            WriteInt32(target, offset + 4, unchecked((int)(value >> 32)));
         }
 
         private static IntPtr NativeMaximum()

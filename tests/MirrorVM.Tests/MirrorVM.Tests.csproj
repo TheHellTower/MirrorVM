@@ -16,6 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\MirrorVM\MirrorVM.csproj" />
+    <ProjectReference Include="..\..\Samples\MirrorVM.Sample\MirrorVM.Sample.csproj" />
     <ProjectReference Include="..\..\src\MirrorVM.Runtime\MirrorVM.Runtime.csproj" />
   </ItemGroup>
 </Project>

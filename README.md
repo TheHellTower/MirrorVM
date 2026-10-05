@@ -26,40 +26,56 @@ cast back to `string` by the rewritten method.
 
 ## Development milestones
 
-- [x] **M1 - First protect-and-rewrite path:** Convert a small linear
-  subset of static methods to bytecode, run it through the shared VM, and leave
-  unsupported methods intact with a reported reason. The initial subset
-  includes arithmetic and strings.
-- [ ] **M2 - Numeric conversion end to end:** Let converted methods use
-  `Int64`/`UInt64`, native integers, and floating-point values the runtime can
-  already calculate with. Translate constants and arguments, return the right
-  CLR types, then exercise signed, unsigned, checked, and unchecked operations
-  through protected methods.
+- [x] **M1 - First protect-and-rewrite path:** Convert a linear arithmetic and
+  string method subset, execute it through the shared VM, and leave unsupported
+  methods unchanged with a reported reason. The protected sample passed all 26
+  configured runtime matrix entries in x86 and x64 processes.
+- [x] **M2 - Numeric values end to end:** Carry signed and unsigned integers,
+  native integers, `Single`, and `Double` through arguments, constants,
+  arithmetic, conversions, and typed returns. Implement arithmetic, bitwise,
+  shift, comparison, `ckfinite`, and the full CIL `conv.*` family, including
+  checked unsigned-source forms. CLR differential checks for implemented
+  numeric opcodes and protected numeric methods passed all 26 configured matrix
+  entries in x86 and x64 processes. `Decimal` is supported by value only; its
+  arithmetic operators compile to calls.
 - [ ] **M3 - Control flow:** Translate branches and build enough control
-  flow and stack validation to run methods with decisions and loops.
-- [ ] **M4 - Method calls:** Add call translation and define how VM code
-  passes arguments and results between methods.
+  flow, branch targets, stack merges, and validation to run methods with
+  decisions, loops, and switches.
+- [ ] **M4 - Method calls and dispatch:** Add `call`, `callvirt`, and object
+  creation with argument and return handling. Cover overloads, virtual and
+  abstract methods, interface dispatch, structs, generic methods/types, and the
+  `constrained.` and `tail.` prefixes.
 - [ ] **M5 - Exception handling:** Translate exception regions, including
-  catch, filter, finally, and fault clauses, and define exception propagation
-  and stack unwinding in the VM.
-- [ ] **M6 - Toward broad CLR compatibility:** Expand CIL and CLR behavior
-  coverage, then measure it across .NET Framework 2.0-4.8.1 and modern .NET
-  through 10. Full CLR compatibility is a long-term research goal; track gaps
-  with tests and a compatibility matrix as the supported scope grows.
+  nested catch, filter, finally, and fault clauses, then verify exception
+  propagation, rethrow, and stack unwinding.
+- [ ] **M6 - Toward broad CLR compatibility:** Cover the remaining type system
+  and CIL rules: Boolean and character values; every signed and unsigned integer
+  width; native integers; floating point; `Decimal`, `Half`, `Int128`, and
+  `UInt128`; enums; references, strings, objects, and boxing; nullable and
+  arbitrary structs and layout; arrays of every rank; generics; managed
+  byrefs/ref returns; unmanaged and function pointers; typed references; unsafe
+  code; and async/iterator state machines. The final gate is the full version
+  matrix below. Every milestone remains open until its behavior is built and run
+  on every applicable target.
 
 ## Known limitations
 
 - Conversion currently accepts only static, non-generic methods without
-  locals or exception handlers, with `Int32`, `UInt32`, or `String` parameters
-  and return types, and up to 256 parameters.
-- The supported CIL subset is linear: argument loads, I4 constants, `ldstr`,
-  implemented arithmetic operations, `neg`, `nop`, and a final `ret`. Calls
-  and branches are not supported.
+  locals or exception handlers and with up to 256 parameters. Supported
+  parameter and return types are Boolean, the built-in integer types through
+  64-bit, `IntPtr`/`UIntPtr`, `Single`, `Double`, `Decimal`, and `String`.
+- The supported CIL subset is linear: argument loads, I4/I8/R4/R8 constants,
+  `ldstr`, integer and floating arithmetic, bitwise operations, shifts,
+  comparisons, `neg`, `not`, `ckfinite`, all numeric `conv.*` opcodes, `nop`,
+  and a final `ret`. Calls, branches, fields, arrays, and pointer/byref
+  operations are not supported yet.
 - A method with an unsupported feature is left unchanged and reported. If no
   methods qualify, no protected assembly is written.
-- Runtime arithmetic supports more numeric kinds than method conversion, but
-  not all CLR numeric behavior or all CIL conversions, comparisons, bitwise
-  operations, shifts, and verification rules.
+- `Decimal` operators and user-defined numeric operators compile to method calls
+  and are skipped until call support. Enums, arbitrary structs, object and array
+  references, and unsafe or managed pointers are outside the current subset.
+- The converter handles only linear stack flow. Branches, stack merges, locals,
+  exception regions, and the broader CLR verification rules are not implemented.
 - Assemblies with a strong-name public key, mixed-mode assemblies, and native
   apphosts are rejected. For modern .NET applications, pass the managed
   `.dll`, not the native apphost.
@@ -67,10 +83,22 @@ cast back to `string` by the rewritten method.
 
 ## .NET compatibility
 
-Goal: .NET Framework 2.0-4.8.1 and modern .NET through 10. Runtime targets:
-`net20`, `netstandard2.0`, `net9.0`; virtualizer and tests: .NET 9. The sample
-has been run on Framework 2.0 and 4.8.1, Core 3.1, and .NET 9. Intermediate
-Framework releases and .NET 10 have not yet been verified.
+Goal: build and run on .NET Framework 2.0, 3.0, 3.5, 4.0, 4.5, 4.5.1, 4.5.2,
+4.6, 4.6.1, 4.6.2, 4.7, 4.7.1, 4.7.2, 4.8, and 4.8.1; .NET Core 2.0, 2.1,
+2.2, 3.0, and 3.1; and .NET 5 through 10. The runtime builds for `net20`,
+`netstandard2.0`, and `net9.0`; the virtualizer and unit tests target .NET 9.
+The sample builds for the individual SDK-supported targets from Framework 2.0
+and 3.5 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. Framework
+3.0 has no reference pack in the installed SDK package set; the matrix runner
+uses the `net20` sample for its CLR 2.0 execution line.
+
+The Release solution builds all 25 configured sample targets. The protected
+sample and its CLR differential checks passed all 26 matrix entries in both
+x86 and x64 processes: Framework 2.0/3.0/3.5 and 4.0–4.8.1, Core 2.0–3.1, and
+.NET 5–10. Framework 3.0 uses the `net20` sample on the CLR 2.0 line. Framework
+4.x targets execute on the installed 4.8.1 in-place CLR, not separate
+historical 4.x runtimes. The 16 unit tests pass on .NET 9. Legacy Core targets
+produce NuGet vulnerability warnings because those runtimes are out of support.
 
 ## Build, test, and run
 
@@ -78,8 +106,15 @@ Framework releases and .NET 10 have not yet been verified.
 dotnet restore MirrorVM.sln
 dotnet build MirrorVM.sln --configuration Release --no-restore
 dotnet test tests/MirrorVM.Tests/MirrorVM.Tests.csproj --configuration Release --no-build
+.\scripts\verify-runtime-matrix.ps1
+.\scripts\verify-runtime-matrix.ps1 -X86
 ```
 
+The matrix script requires each targeted runtime to be installed for the
+selected architecture and fails when one is missing. `-X86` runs the same
+matrix at 32-bit width; its Framework runs require the Windows SDK's
+`CorFlags.exe`. A selected-runtime run, for example `-TargetFrameworks net9.0`,
+is useful locally but does not pass the full gate.
 Build artifacts go under `Release`. To protect a managed assembly on Windows:
 
 ```powershell
@@ -95,8 +130,9 @@ Framework executable). Run a modern .NET output with `dotnet` and keep
 - `src/MirrorVM`: .NET 9 virtualizer and assembly converter.
 - `src/MirrorVM.Runtime`: bytecode interpreter, shared stack, handlers, and
   numeric arithmetic helper.
-- `tests/MirrorVM.Tests`: VM and arithmetic tests.
-- `Samples/MirrorVM.Sample`: cross-target arithmetic and string sample.
+- `tests/MirrorVM.Tests`: CLR comparison and protected-method tests.
+- `Samples/MirrorVM.Sample`: cross-target protected arithmetic and numeric sample.
+- `scripts/verify-runtime-matrix.ps1`: builds and runs the protected sample per target.
 - `docs`: GitHub Pages source; its root page redirects to the blog.
 - `docs/blog`: technical notes and diagrams.
 
@@ -108,6 +144,9 @@ kept simple for learning and experimentation, not designed to become a product.
 Development will be published in gradual research checkpoints. Each release
 will add a limited set of capabilities, document what was tested and what
 remains open, and let readers follow and assess the VM's progress over time.
+Some AI-generated filler ("AI slop") may remain temporarily, mainly because
+the human maintainer may be lazy about low-priority cleanup during review. Any
+that remains will be removed in the final milestone.
 
 ## Blog
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Collections.Generic;
+using System;
 using System.Text;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -8,7 +9,7 @@ namespace MirrorVM.Protector
 {
     internal static class MethodBodyConverter
     {
-        private static readonly Dictionary<Code, VirtualOpCode> ArithmeticOpCodes =
+        private static readonly Dictionary<Code, VirtualOpCode> NumericOpCodes =
             new Dictionary<Code, VirtualOpCode>
             {
                 { Code.Add, VirtualOpCode.Add },
@@ -24,12 +25,51 @@ namespace MirrorVM.Protector
                 { Code.Div_Un, VirtualOpCode.DivUn },
                 { Code.Rem, VirtualOpCode.Rem },
                 { Code.Rem_Un, VirtualOpCode.RemUn },
-                { Code.Neg, VirtualOpCode.Neg }
+                { Code.Neg, VirtualOpCode.Neg },
+                { Code.Not, VirtualOpCode.Not },
+                { Code.And, VirtualOpCode.And },
+                { Code.Or, VirtualOpCode.Or },
+                { Code.Xor, VirtualOpCode.Xor },
+                { Code.Shl, VirtualOpCode.Shl },
+                { Code.Shr, VirtualOpCode.Shr },
+                { Code.Shr_Un, VirtualOpCode.ShrUn },
+                { Code.Ceq, VirtualOpCode.Ceq },
+                { Code.Cgt, VirtualOpCode.Cgt },
+                { Code.Cgt_Un, VirtualOpCode.CgtUn },
+                { Code.Clt, VirtualOpCode.Clt },
+                { Code.Clt_Un, VirtualOpCode.CltUn }
+            };
+
+        private static readonly Dictionary<Code, VirtualOpCode> ConversionOpCodes =
+            new Dictionary<Code, VirtualOpCode>
+            {
+                { Code.Conv_I1, VirtualOpCode.ConvI1 }, { Code.Conv_U1, VirtualOpCode.ConvU1 },
+                { Code.Conv_I2, VirtualOpCode.ConvI2 }, { Code.Conv_U2, VirtualOpCode.ConvU2 },
+                { Code.Conv_I4, VirtualOpCode.ConvI4 }, { Code.Conv_U4, VirtualOpCode.ConvU4 },
+                { Code.Conv_I8, VirtualOpCode.ConvI8 }, { Code.Conv_U8, VirtualOpCode.ConvU8 },
+                { Code.Conv_I, VirtualOpCode.ConvI }, { Code.Conv_U, VirtualOpCode.ConvU },
+                { Code.Conv_R4, VirtualOpCode.ConvR4 }, { Code.Conv_R8, VirtualOpCode.ConvR8 },
+                { Code.Conv_R_Un, VirtualOpCode.ConvRUn },
+                { Code.Conv_Ovf_I1, VirtualOpCode.ConvOvfI1 }, { Code.Conv_Ovf_U1, VirtualOpCode.ConvOvfU1 },
+                { Code.Conv_Ovf_I2, VirtualOpCode.ConvOvfI2 }, { Code.Conv_Ovf_U2, VirtualOpCode.ConvOvfU2 },
+                { Code.Conv_Ovf_I4, VirtualOpCode.ConvOvfI4 }, { Code.Conv_Ovf_U4, VirtualOpCode.ConvOvfU4 },
+                { Code.Conv_Ovf_I8, VirtualOpCode.ConvOvfI8 }, { Code.Conv_Ovf_U8, VirtualOpCode.ConvOvfU8 },
+                { Code.Conv_Ovf_I, VirtualOpCode.ConvOvfI }, { Code.Conv_Ovf_U, VirtualOpCode.ConvOvfU },
+                { Code.Conv_Ovf_I1_Un, VirtualOpCode.ConvOvfI1Un }, { Code.Conv_Ovf_U1_Un, VirtualOpCode.ConvOvfU1Un },
+                { Code.Conv_Ovf_I2_Un, VirtualOpCode.ConvOvfI2Un }, { Code.Conv_Ovf_U2_Un, VirtualOpCode.ConvOvfU2Un },
+                { Code.Conv_Ovf_I4_Un, VirtualOpCode.ConvOvfI4Un }, { Code.Conv_Ovf_U4_Un, VirtualOpCode.ConvOvfU4Un },
+                { Code.Conv_Ovf_I8_Un, VirtualOpCode.ConvOvfI8Un }, { Code.Conv_Ovf_U8_Un, VirtualOpCode.ConvOvfU8Un },
+                { Code.Conv_Ovf_I_Un, VirtualOpCode.ConvOvfIUn }, { Code.Conv_Ovf_U_Un, VirtualOpCode.ConvOvfUUn }
             };
 
         private enum StackValueKind
         {
             Int32,
+            Int64,
+            NativeInt,
+            Single,
+            Double,
+            Decimal,
             String
         }
 
@@ -47,7 +87,7 @@ namespace MirrorVM.Protector
             StackValueKind returnKind;
             if (!TryGetValueKind(method.MethodSig.RetType, out returnKind))
             {
-                reason = "requires an Int32, UInt32, or String return type";
+                reason = "has an unsupported return type";
                 return false;
             }
 
@@ -63,7 +103,7 @@ namespace MirrorVM.Protector
             {
                 if (!TryGetValueKind(method.MethodSig.Params[index], out parameterKinds[index]))
                 {
-                    reason = "requires only Int32, UInt32, or String parameters";
+                    reason = "has an unsupported parameter type";
                     return false;
                 }
             }
@@ -113,6 +153,33 @@ namespace MirrorVM.Protector
                     continue;
                 }
 
+                long longConstant;
+                if (TryGetInt64Constant(instruction, out longConstant))
+                {
+                    output.Add((byte)VirtualOpCode.LoadInt64);
+                    AddInt64(output, longConstant);
+                    stack.Add(StackValueKind.Int64);
+                    continue;
+                }
+
+                float singleConstant;
+                if (TryGetSingleConstant(instruction, out singleConstant))
+                {
+                    output.Add((byte)VirtualOpCode.LoadSingle);
+                    AddSingle(output, singleConstant);
+                    stack.Add(StackValueKind.Single);
+                    continue;
+                }
+
+                double doubleConstant;
+                if (TryGetDoubleConstant(instruction, out doubleConstant))
+                {
+                    output.Add((byte)VirtualOpCode.LoadDouble);
+                    AddDouble(output, doubleConstant);
+                    stack.Add(StackValueKind.Double);
+                    continue;
+                }
+
                 if (code == Code.Ldstr)
                 {
                     string value = instruction.Operand as string;
@@ -130,10 +197,36 @@ namespace MirrorVM.Protector
                     continue;
                 }
 
-                VirtualOpCode virtualOpCode;
-                if (ArithmeticOpCodes.TryGetValue(code, out virtualOpCode))
+                if (code == Code.Ckfinite)
                 {
-                    bool unary = virtualOpCode == VirtualOpCode.Neg;
+                    if (stack.Count == 0 || !IsFloatingPoint(stack[stack.Count - 1]))
+                    {
+                        reason = "uses ckfinite with a non-floating stack value";
+                        return false;
+                    }
+
+                    output.Add((byte)VirtualOpCode.Ckfinite);
+                    continue;
+                }
+
+                VirtualOpCode conversion;
+                if (ConversionOpCodes.TryGetValue(code, out conversion))
+                {
+                    if (stack.Count == 0 || !IsNumeric(stack[stack.Count - 1]))
+                    {
+                        reason = "uses a numeric conversion with a non-numeric stack value";
+                        return false;
+                    }
+
+                    output.Add((byte)conversion);
+                    stack[stack.Count - 1] = GetConversionResultKind(conversion);
+                    continue;
+                }
+
+                VirtualOpCode virtualOpCode;
+                if (NumericOpCodes.TryGetValue(code, out virtualOpCode))
+                {
+                    bool unary = virtualOpCode == VirtualOpCode.Neg || virtualOpCode == VirtualOpCode.Not;
                     int requiredDepth = unary ? 1 : 2;
                     if (stack.Count < requiredDepth)
                     {
@@ -141,10 +234,14 @@ namespace MirrorVM.Protector
                         return false;
                     }
 
-                    if (stack[stack.Count - 1] != StackValueKind.Int32 ||
-                        (!unary && stack[stack.Count - 2] != StackValueKind.Int32))
+                    StackValueKind resultKind;
+                    if (!TryGetNumericResultKind(
+                        virtualOpCode,
+                        stack[stack.Count - 1],
+                        unary ? stack[stack.Count - 1] : stack[stack.Count - 2],
+                        out resultKind))
                     {
-                        reason = "uses arithmetic with a non-Int32 value";
+                        reason = "uses arithmetic with incompatible CIL stack kinds";
                         return false;
                     }
 
@@ -153,7 +250,11 @@ namespace MirrorVM.Protector
                     {
                         stack.RemoveAt(stack.Count - 1);
                         stack.RemoveAt(stack.Count - 1);
-                        stack.Add(StackValueKind.Int32);
+                        stack.Add(resultKind);
+                    }
+                    else
+                    {
+                        stack[stack.Count - 1] = resultKind;
                     }
 
                     continue;
@@ -167,7 +268,7 @@ namespace MirrorVM.Protector
                         return false;
                     }
 
-                    if (stack.Count != 1 || stack[0] != returnKind)
+                    if (stack.Count != 1 || !AreStackKindsCompatible(stack[0], returnKind))
                     {
                         reason = "does not return one value matching its declared type";
                         return false;
@@ -200,9 +301,42 @@ namespace MirrorVM.Protector
             }
 
             string fullName = type.FullName;
-            if (fullName == "System.Int32" || fullName == "System.UInt32")
+            if (fullName == "System.Boolean" || fullName == "System.SByte" ||
+                fullName == "System.Byte" || fullName == "System.Int16" ||
+                fullName == "System.UInt16" || fullName == "System.Char" ||
+                fullName == "System.Int32" || fullName == "System.UInt32")
             {
                 kind = StackValueKind.Int32;
+                return true;
+            }
+
+            if (fullName == "System.Int64" || fullName == "System.UInt64")
+            {
+                kind = StackValueKind.Int64;
+                return true;
+            }
+
+            if (fullName == "System.IntPtr" || fullName == "System.UIntPtr")
+            {
+                kind = StackValueKind.NativeInt;
+                return true;
+            }
+
+            if (fullName == "System.Single")
+            {
+                kind = StackValueKind.Single;
+                return true;
+            }
+
+            if (fullName == "System.Double")
+            {
+                kind = StackValueKind.Double;
+                return true;
+            }
+
+            if (fullName == "System.Decimal")
+            {
+                kind = StackValueKind.Decimal;
                 return true;
             }
 
@@ -214,6 +348,129 @@ namespace MirrorVM.Protector
 
             kind = default(StackValueKind);
             return false;
+        }
+
+        private static bool TryGetNumericResultKind(
+            VirtualOpCode opcode,
+            StackValueKind left,
+            StackValueKind right,
+            out StackValueKind result)
+        {
+            if (opcode == VirtualOpCode.Neg || opcode == VirtualOpCode.Not)
+            {
+                result = left;
+                return opcode == VirtualOpCode.Not ? IsInteger(left) : IsNumeric(left);
+            }
+
+            if (opcode == VirtualOpCode.Shl || opcode == VirtualOpCode.Shr || opcode == VirtualOpCode.ShrUn)
+            {
+                result = left;
+                return IsInteger(left) && right == StackValueKind.Int32;
+            }
+
+            bool comparison = opcode == VirtualOpCode.Ceq || opcode == VirtualOpCode.Cgt ||
+                opcode == VirtualOpCode.CgtUn || opcode == VirtualOpCode.Clt || opcode == VirtualOpCode.CltUn;
+            if (comparison && AreCompatibleNumericKinds(left, right))
+            {
+                result = StackValueKind.Int32;
+                return true;
+            }
+
+            if (IsFloatingPoint(left) || IsFloatingPoint(right))
+            {
+                if (!IsFloatingPoint(left) || !IsFloatingPoint(right) ||
+                    (opcode != VirtualOpCode.Add && opcode != VirtualOpCode.Sub &&
+                     opcode != VirtualOpCode.Mul && opcode != VirtualOpCode.Div &&
+                     opcode != VirtualOpCode.Rem))
+                {
+                    result = default(StackValueKind);
+                    return false;
+                }
+
+                result = left == StackValueKind.Double || right == StackValueKind.Double
+                    ? StackValueKind.Double
+                    : StackValueKind.Single;
+                return true;
+            }
+
+            if (left == right && IsInteger(left))
+            {
+                result = left;
+                return true;
+            }
+
+            if ((left == StackValueKind.NativeInt && right == StackValueKind.Int32) ||
+                (left == StackValueKind.Int32 && right == StackValueKind.NativeInt))
+            {
+                result = comparison ? StackValueKind.Int32 : StackValueKind.NativeInt;
+                return true;
+            }
+
+            result = default(StackValueKind);
+            return false;
+        }
+
+        private static bool AreCompatibleNumericKinds(StackValueKind left, StackValueKind right)
+        {
+            if (IsInteger(left) && IsInteger(right))
+            {
+                return left == right || left == StackValueKind.NativeInt && right == StackValueKind.Int32 ||
+                    left == StackValueKind.Int32 && right == StackValueKind.NativeInt;
+            }
+
+            return IsFloatingPoint(left) && IsFloatingPoint(right);
+        }
+
+        private static StackValueKind GetConversionResultKind(VirtualOpCode opcode)
+        {
+            switch (opcode)
+            {
+                case VirtualOpCode.ConvI1: case VirtualOpCode.ConvU1:
+                case VirtualOpCode.ConvI2: case VirtualOpCode.ConvU2:
+                case VirtualOpCode.ConvI4: case VirtualOpCode.ConvU4:
+                case VirtualOpCode.ConvOvfI1: case VirtualOpCode.ConvOvfU1:
+                case VirtualOpCode.ConvOvfI2: case VirtualOpCode.ConvOvfU2:
+                case VirtualOpCode.ConvOvfI4: case VirtualOpCode.ConvOvfU4:
+                case VirtualOpCode.ConvOvfI1Un: case VirtualOpCode.ConvOvfU1Un:
+                case VirtualOpCode.ConvOvfI2Un: case VirtualOpCode.ConvOvfU2Un:
+                case VirtualOpCode.ConvOvfI4Un: case VirtualOpCode.ConvOvfU4Un:
+                    return StackValueKind.Int32;
+                case VirtualOpCode.ConvI8: case VirtualOpCode.ConvU8:
+                case VirtualOpCode.ConvOvfI8: case VirtualOpCode.ConvOvfU8:
+                case VirtualOpCode.ConvOvfI8Un: case VirtualOpCode.ConvOvfU8Un:
+                    return StackValueKind.Int64;
+                case VirtualOpCode.ConvI: case VirtualOpCode.ConvU:
+                case VirtualOpCode.ConvOvfI: case VirtualOpCode.ConvOvfU:
+                case VirtualOpCode.ConvOvfIUn: case VirtualOpCode.ConvOvfUUn:
+                    return StackValueKind.NativeInt;
+                case VirtualOpCode.ConvR4:
+                    return StackValueKind.Single;
+                case VirtualOpCode.ConvR8: case VirtualOpCode.ConvRUn:
+                    return StackValueKind.Double;
+                default:
+                    return default(StackValueKind);
+            }
+        }
+
+        private static bool IsFloatingPoint(StackValueKind kind)
+        {
+            return kind == StackValueKind.Single || kind == StackValueKind.Double;
+        }
+
+        private static bool IsNumeric(StackValueKind kind)
+        {
+            return IsInteger(kind) || IsFloatingPoint(kind);
+        }
+
+        private static bool IsInteger(StackValueKind kind)
+        {
+            return kind == StackValueKind.Int32 || kind == StackValueKind.Int64 ||
+                kind == StackValueKind.NativeInt;
+        }
+
+        private static bool AreStackKindsCompatible(StackValueKind actual, StackValueKind expected)
+        {
+            return actual == expected || (IsFloatingPoint(actual) && IsFloatingPoint(expected));
         }
 
         private static bool TryGetArgumentIndex(Instruction instruction, out int index)
@@ -273,6 +530,42 @@ namespace MirrorVM.Protector
             return false;
         }
 
+        private static bool TryGetInt64Constant(Instruction instruction, out long value)
+        {
+            if (instruction.OpCode.Code == Code.Ldc_I8 && instruction.Operand is long)
+            {
+                value = (long)instruction.Operand;
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        private static bool TryGetSingleConstant(Instruction instruction, out float value)
+        {
+            if (instruction.OpCode.Code == Code.Ldc_R4 && instruction.Operand is float)
+            {
+                value = (float)instruction.Operand;
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        private static bool TryGetDoubleConstant(Instruction instruction, out double value)
+        {
+            if (instruction.OpCode.Code == Code.Ldc_R8 && instruction.Operand is double)
+            {
+                value = (double)instruction.Operand;
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
         private static void AddInt32(List<byte> output, int value)
         {
             unchecked
@@ -282,6 +575,22 @@ namespace MirrorVM.Protector
                 output.Add((byte)(value >> 16));
                 output.Add((byte)(value >> 24));
             }
+        }
+
+        private static void AddInt64(List<byte> output, long value)
+        {
+            AddInt32(output, unchecked((int)value));
+            AddInt32(output, unchecked((int)(value >> 32)));
+        }
+
+        private static void AddSingle(List<byte> output, float value)
+        {
+            AddInt32(output, BitConverter.ToInt32(BitConverter.GetBytes(value), 0));
+        }
+
+        private static void AddDouble(List<byte> output, double value)
+        {
+            AddInt64(output, BitConverter.ToInt64(BitConverter.GetBytes(value), 0));
         }
     }
 }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="The first MirrorVM protector rewrites supported static method bodies and leaves methods with unsupported opcodes unchanged.">
-  <title>A first protect-and-rewrite path — MirrorVM Field Notes</title>
+  <title>M1 - First protect-and-rewrite path — MirrorVM Field Notes</title>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -16,18 +16,17 @@
         <span class="brand-name">MirrorVM <b>Field Notes</b></span>
       </a>
       <nav aria-label="Main navigation">
-        <a href="../index.html">Notes</a>
         <a class="active" href="method-virtualization.html">Virtualization</a>
         <a href="compatibility-matrix.html">Compatibility</a>
-        <a href="integer-arithmetic.html">Arithmetic</a>
+        <a href="../architecture.html">Architecture</a>
       </nav>
     </div>
   </header>
 
   <main id="article" class="article-shell">
     <article class="article-main">
-      <div class="article-kicker"><span>Release milestone</span><span>27 September 2026</span></div>
-      <h1>A first protect-and-rewrite path</h1>
+      <div class="article-kicker"><span>Release milestone M1</span><span>4 October 2026</span></div>
+      <h1>M1 - First protect-and-rewrite path</h1>
       <p class="article-deck">MirrorVM has moved from an arithmetic interpreter to a small executable protector: read managed assemblies, translate supported static methods, replace those method bodies with calls to the VM, and write a sibling output.</p>
       <div class="article-rule"></div>
 
@@ -38,32 +37,22 @@
         <p>For each supported method, the new body builds its serialized bytecode and an <code>object[]</code> containing the original arguments. It calls <code>VirtualMachine.Execute(byte[], object[])</code>, which returns one object. The stub casts or unboxes that result according to the method's declared return type. There is no separate typed entrypoint for strings or integers.</p>
 
         <h2>Supported methods are translated as a unit</h2>
-        <p>This first converter accepts static, non-generic methods without locals or exception handlers, with at most 256 parameters. Parameters and returns must be <code>Int32</code>, <code>UInt32</code>, or <code>String</code>. The supported CIL subset is argument loads, I4 constants, <code>ldstr</code>, the implemented arithmetic operations, <code>neg</code>, <code>nop</code>, and a final <code>ret</code>.</p>
+        <p>The converter accepts static, non-generic methods without locals or exception handlers, with at most 256 parameters. Supported parameter and return types are Boolean, the built-in integer types through 64-bit, <code>IntPtr</code>/<code>UIntPtr</code>, <code>Single</code>, <code>Double</code>, <code>Decimal</code>, and <code>String</code>. The linear CIL subset includes argument loads, I4/I8/R4/R8 constants, <code>ldstr</code>, arithmetic, bitwise operations, shifts, comparisons, <code>neg</code>, <code>not</code>, <code>ckfinite</code>, all numeric <code>conv.*</code> opcodes, <code>nop</code>, and a final <code>ret</code>.</p>
         <p>The converter builds a candidate bytecode sequence for a method and replaces the body only when the whole method passes those checks. If a method uses an unsupported opcode, its original body stays in place and the CLI reports the method and opcode. There is no partial rewrite. Calls and branches remain unsupported at this stage.</p>
-        <pre><code>Virtualized methods: 5
-  ...::Add
-  ...::AddUnsigned
-  ...::Subtract
-  ...::AddThenSubtract
-  ...::MyString
-Skipped methods: 3
-  ...::Main — requires an Int32, UInt32, or String return type
-  ...::UnsupportedBranch — contains unsupported CIL opcode 'ble.s'
-  ...::UnsupportedCall — contains unsupported CIL opcode 'call'</code></pre>
-        <p>The sample's <code>UnsupportedBranch</code> and <code>UnsupportedCall</code> bodies remain ordinary CIL. The other five methods use the runtime. If an input has no supported methods, MirrorVM writes no protected assembly and prints the skip reasons.</p>
+        <p>For example, the sample's branch and method-call bodies remain ordinary CIL and are reported as skipped. Supported arithmetic, string, and numeric bodies are replaced as complete methods. If an input has no supported methods, MirrorVM writes no protected assembly and prints the skip reasons.</p>
 
         <h2>Keep the runtime easy to inspect</h2>
         <p>The runtime has one <code>Stack&lt;object&gt;</code> and one <code>Push</code>/<code>Pop</code> pair. Each handler performs its stack effect. The interpreter reads bytecode IDs and dispatches to registered handler objects; execution does not allocate an opcode object per instruction. Each handler's class name follows the CIL opcode it serves.</p>
         <p>This structure is meant to be identifiable and traceable. It helps a reverse engineer follow a protected method from its rewritten stub, through bytecode dispatch, into the corresponding handler. MirrorVM includes no anti-debugging, anti-tamper, or concealment feature.</p>
 
         <h2>Verification and boundaries</h2>
-        <p>The Release solution builds the runtime for <code>net20</code>, <code>netstandard2.0</code>, and <code>net9.0</code>. The 13 automated tests run through the common <code>Execute</code> entrypoint on .NET 9. The protected sample has also run on Framework 2.0 and 4.8.1, Core 3.1, and .NET 9. Those checkpoints do not establish behavior on every intermediate Framework release.</p>
+        <p>The Release solution builds 25 configured sample targets. The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 16 unit tests pass on the .NET 9 x64 host. Framework 4.x targets ran on the installed 4.8.1 in-place CLR; those runs do not test separate historical 4.x runtimes.</p>
         <p>Assemblies carrying a strong-name public key and mixed-mode assemblies are rejected; the tool does not accept a signing key to re-sign rewritten output. Native apphosts are also rejected. For modern .NET inputs, runtime/deps sidecars are renamed and updated, and a compatible <code>MirrorVM.Runtime.dll</code> is placed next to the result.</p>
-        <p>The project targets .NET 9 for its virtualizer and tests to match the available Visual Studio baseline. The wider ambition remains .NET Framework 2.0 through 4.8.1 and modern .NET through 10. Each additional runtime needs direct verification before its support can be claimed.</p>
+        <p>The virtualizer and unit tests target .NET 9. The runtime library builds for <code>net20</code>, <code>netstandard2.0</code>, and <code>net9.0</code>. The checked matrix covers the configured sample targets, while unsupported method features stay outside the current release scope.</p>
 
         <div class="fact-box">
           <strong>Protected sample output</strong>
-          <p>Framework 2.0, Framework 4.8.1, .NET Core 3.1, and .NET 9 each printed <code>42</code>, <code>42</code>, <code>42</code>, <code>42</code>, and <code>Test</code>.</p>
+          <p>All 26 configured matrix entries passed the protected arithmetic, string, and numeric sample plus its CLR differential checks in x86 and x64 processes.</p>
         </div>
 
         <div class="article-end">
@@ -72,14 +61,14 @@ Skipped methods: 3
       </div>
 
       <nav class="post-nav" aria-label="Adjacent articles">
-        <a href="integer-arithmetic.html">← Arithmetic and strings</a>
-        <a href="compatibility-matrix.html">Compatibility matrix →</a>
+        <a href="integer-arithmetic.html">M2 - Numeric values end to end →</a>
+        <a href="../architecture.html">Architecture →</a>
       </nav>
     </article>
     <aside class="article-aside">
       <div class="aside-card">
         <p class="eyebrow">At a glance</p>
-        <p>Input: managed .NET exe/dll<br>Output: sibling _MVM exe/dll<br>Shared runtime entrypoint: Execute(byte[], object[])<br>Sample: 5 converted, 3 skipped</p>
+        <p>Input: managed .NET exe/dll<br>Output: sibling _MVM exe/dll<br>Shared runtime entrypoint: Execute(byte[], object[])<br>M1 and M2 matrix: passed</p>
       </div>
     </aside>
   </main>
