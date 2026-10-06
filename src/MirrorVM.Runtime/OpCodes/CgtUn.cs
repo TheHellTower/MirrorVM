@@ -6,8 +6,8 @@ namespace MirrorVM.OpCodes
         public string Name { get { return "CgtUn"; } }
         public void Execute(VirtualMachineState state)
         {
-            object right = state.Pop();
-            object left = state.Pop();
+            VirtualMachineValue right = state.Pop();
+            VirtualMachineValue left = state.Pop();
             state.Push(NumericArithmetic.Compare(VirtualOpCode.CgtUn, left, right));
         }
     }

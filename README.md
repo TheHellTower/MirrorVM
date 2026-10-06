@@ -16,13 +16,15 @@ byte[] byteCode =
     0x10                          // Add
 };
 
-object result = VirtualMachine.Execute(byteCode, new object[0]);
+VirtualMachineProgram program = VirtualMachine.Compile(byteCode);
+object result = VirtualMachine.Execute(program, new object[0]);
 int sum = (int)result; // 42
 ```
 
-Each opcode handles its own effects on the VM's single `Stack<object>`. Protected
-methods use the same `Execute` entrypoint; a string result, for example, is
-cast back to `string` by the rewritten method.
+The runtime compiles bytecode into a decoded program once. Protected methods use
+the same `Execute` entrypoint; each opcode uses the VM's single contiguous
+`VirtualMachineValue` stack, and a string result is cast back to `string` by the
+rewritten method.
 
 ## Development milestones
 
@@ -97,7 +99,7 @@ sample and its CLR differential checks passed all 26 matrix entries in both
 x86 and x64 processes: Framework 2.0/3.0/3.5 and 4.0–4.8.1, Core 2.0–3.1, and
 .NET 5–10. Framework 3.0 uses the `net20` sample on the CLR 2.0 line. Framework
 4.x targets execute on the installed 4.8.1 in-place CLR, not separate
-historical 4.x runtimes. The 16 unit tests pass on .NET 9. Legacy Core targets
+historical 4.x runtimes. The 17 unit tests pass on .NET 9. Legacy Core targets
 produce NuGet vulnerability warnings because those runtimes are out of support.
 
 ## Build, test, and run
@@ -128,8 +130,8 @@ Framework executable). Run a modern .NET output with `dotnet` and keep
 ## Project layout
 
 - `src/MirrorVM`: .NET 9 virtualizer and assembly converter.
-- `src/MirrorVM.Runtime`: bytecode interpreter, shared stack, handlers, and
-  numeric arithmetic helper.
+- `src/MirrorVM.Runtime`: bytecode compiler and interpreter, indexed opcode
+  table, contiguous VM stack, handlers, and numeric arithmetic helper.
 - `tests/MirrorVM.Tests`: CLR comparison and protected-method tests.
 - `Samples/MirrorVM.Sample`: cross-target protected arithmetic and numeric sample.
 - `scripts/verify-runtime-matrix.ps1`: builds and runs the protected sample per target.

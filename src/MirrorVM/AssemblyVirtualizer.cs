@@ -78,8 +78,21 @@ namespace MirrorVM.Protector
                     }
 
                     IMethod runtimeEntryPoint = module.Import(GetRuntimeEntryPoint());
-                    foreach (TypeDef type in module.GetTypes())
+                    IMethod runtimeCompiler = module.Import(GetRuntimeCompiler());
+                    List<TypeDef> types = new List<TypeDef>(module.GetTypes());
+                    HashSet<string> typeNames = new HashSet<string>();
+                    foreach (TypeDef type in types)
                     {
+                        typeNames.Add(type.FullName);
+                    }
+
+                    int cacheTypeIndex = 0;
+                    foreach (TypeDef type in types)
+                    {
+                        TypeDef cacheType = null;
+                        MethodDef cacheInitializer = null;
+                        int cacheFieldIndex = 0;
+
                         foreach (MethodDef method in type.Methods)
                         {
                             byte[] byteCode;
@@ -90,8 +103,37 @@ namespace MirrorVM.Protector
                                 continue;
                             }
 
-                            method.Body = CreateRuntimeStub(module, method, byteCode, runtimeEntryPoint);
+                            if (cacheType == null)
+                            {
+                                string cacheTypeName;
+                                do
+                                {
+                                    cacheTypeName = "MirrorVM.Generated.__MirrorVMCache" + cacheTypeIndex++;
+                                }
+                                while (!typeNames.Add(cacheTypeName));
+
+                                cacheType = CreateProgramCacheType(module, cacheTypeName, out cacheInitializer);
+                            }
+
+                            FieldDef programField = new FieldDefUser(
+                                "Program" + cacheFieldIndex++,
+                                new FieldSig(module.Import(typeof(VirtualMachineProgram)).ToTypeSig()),
+                                dnlib.DotNet.FieldAttributes.Assembly |
+                                dnlib.DotNet.FieldAttributes.Static |
+                                dnlib.DotNet.FieldAttributes.InitOnly);
+                            cacheType.Fields.Add(programField);
+
+                            AppendByteCodeInitialization(module, cacheInitializer.Body, byteCode);
+                            cacheInitializer.Body.Instructions.Add(Instruction.Create(OpCodes.Call, runtimeCompiler));
+                            cacheInitializer.Body.Instructions.Add(Instruction.Create(OpCodes.Stsfld, programField));
+
+                            method.Body = CreateRuntimeStub(module, method, programField, runtimeEntryPoint);
                             convertedMethods.Add(FormatMethodName(type, method));
+                        }
+
+                        if (cacheInitializer != null)
+                        {
+                            cacheInitializer.Body.Instructions.Add(Instruction.Create(OpCodes.Ret));
                         }
                     }
 
@@ -165,17 +207,46 @@ namespace MirrorVM.Protector
         {
             return typeof(VirtualMachine).GetMethod(
                 "Execute",
-                new Type[] { typeof(byte[]), typeof(object[]) });
+                new Type[] { typeof(VirtualMachineProgram), typeof(object[]) });
         }
 
-        private static CilBody CreateRuntimeStub(
-            ModuleDef module,
-            MethodDef method,
-            byte[] byteCode,
-            IMethod runtimeEntryPoint)
+        private static MethodInfo GetRuntimeCompiler()
         {
-            CilBody body = new CilBody();
-            body.MaxStack = 5;
+            return typeof(VirtualMachine).GetMethod(
+                "Compile",
+                new Type[] { typeof(byte[]) });
+        }
+
+        private static TypeDef CreateProgramCacheType(ModuleDef module, string fullName, out MethodDef initializer)
+        {
+            int separator = fullName.LastIndexOf('.');
+            string typeNamespace = fullName.Substring(0, separator);
+            string typeName = fullName.Substring(separator + 1);
+            TypeDef cacheType = new TypeDefUser(
+                typeNamespace,
+                typeName,
+                module.CorLibTypes.Object.TypeDefOrRef);
+            cacheType.Attributes = dnlib.DotNet.TypeAttributes.NotPublic |
+                dnlib.DotNet.TypeAttributes.Abstract |
+                dnlib.DotNet.TypeAttributes.Sealed;
+
+            initializer = new MethodDefUser(
+                ".cctor",
+                MethodSig.CreateStatic(module.CorLibTypes.Void),
+                dnlib.DotNet.MethodImplAttributes.IL | dnlib.DotNet.MethodImplAttributes.Managed,
+                dnlib.DotNet.MethodAttributes.Private |
+                dnlib.DotNet.MethodAttributes.Static |
+                dnlib.DotNet.MethodAttributes.HideBySig |
+                dnlib.DotNet.MethodAttributes.SpecialName |
+                dnlib.DotNet.MethodAttributes.RTSpecialName);
+            initializer.Body = new CilBody { MaxStack = 4 };
+            cacheType.Methods.Add(initializer);
+            module.Types.Add(cacheType);
+            return cacheType;
+        }
+
+        private static void AppendByteCodeInitialization(ModuleDef module, CilBody body, byte[] byteCode)
+        {
             body.Instructions.Add(Instruction.Create(OpCodes.Ldc_I4, byteCode.Length));
             body.Instructions.Add(Instruction.Create(OpCodes.Newarr, module.CorLibTypes.Byte.TypeDefOrRef));
             for (int index = 0; index < byteCode.Length; index++)
@@ -185,6 +256,17 @@ namespace MirrorVM.Protector
                 body.Instructions.Add(Instruction.Create(OpCodes.Ldc_I4, (int)byteCode[index]));
                 body.Instructions.Add(Instruction.Create(OpCodes.Stelem_I1));
             }
+        }
+
+        private static CilBody CreateRuntimeStub(
+            ModuleDef module,
+            MethodDef method,
+            IField programField,
+            IMethod runtimeEntryPoint)
+        {
+            CilBody body = new CilBody();
+            body.MaxStack = 5;
+            body.Instructions.Add(Instruction.Create(OpCodes.Ldsfld, programField));
 
             int argumentCount = method.MethodSig.Params.Count;
             body.Instructions.Add(Instruction.Create(OpCodes.Ldc_I4, argumentCount));

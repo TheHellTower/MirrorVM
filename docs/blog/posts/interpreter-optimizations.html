@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Before-and-after changes to MirrorVM's opcode dispatch, operand stack, and bytecode decoding, with a narrow .NET 9 x64 microbenchmark and its limits.">
+  <title>Reducing repeated work in the interpreter — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="method-virtualization.html">Virtualization</a>
+        <a href="compatibility-matrix.html">Compatibility</a>
+        <a href="../architecture.html">Architecture</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>Runtime design</span><span>6 October 2026</span></div>
+      <h1>Reducing repeated work in the interpreter</h1>
+      <p class="article-deck">The VM now indexes its handlers, stores numeric intermediates inline, and decodes each protected method's bytecode once. A small before-and-after measurement shows what changed on one workload—and where that result stops.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <h2>1. Dispatch by bytecode index</h2>
+        <p>Before, every instruction looked up its handler in a dictionary and checked the lookup result inside the execution loop:</p>
+        <pre><code>IOpCode handler;
+if (!ByteCodeOpCodes.TryGetValue(opcode, out handler))
+    throw new InvalidProgramException(...);
+handler.Execute(state);</code></pre>
+        <p>Now the byte opcode indexes a 256-slot array directly:</p>
+        <pre><code>ByteCodeOpCodes[instruction.OpCode].Execute(state);</code></pre>
+        <p><code>Compile</code> checks that a handler exists while it reads the bytecode. The execution loop no longer hashes a key or repeats the unknown-opcode branch for every instruction. The selected <code>IOpCode</code> handler still performs the instruction's stack work.</p>
+
+        <h2>2. Keep numeric values in the VM stack</h2>
+        <p>Before, <code>Stack&lt;object&gt;</code> held each numeric value as a boxed object:</p>
+        <pre><code>private readonly Stack&lt;object&gt; _stack = new Stack&lt;object&gt;();
+object right = state.Pop();
+object left = state.Pop();
+state.Push(NumericArithmetic.Apply(operation, left, right));</code></pre>
+        <p>Now the VM owns a resizable array of tagged values and a stack count:</p>
+        <pre><code>private VirtualMachineValue[] _stack = new VirtualMachineValue[4];
+private int _stackCount;
+
+VirtualMachineValue right = state.Pop();
+VirtualMachineValue left = state.Pop();
+state.Push(NumericArithmetic.Apply(operation, left, right));</code></pre>
+        <p><code>VirtualMachineValue</code> stores the kind and numeric bits inline; its reference field carries strings and other objects. This removes boxing of intermediate numeric values during arithmetic. The old <code>Stack&lt;object&gt;</code> was itself array-backed, so the change is not from a linked list to contiguous memory: it is an explicit value array with direct stack indexing and inline numeric storage.</p>
+        <p>Boxing remains at the current method boundary. Rewritten stubs place value-type arguments in an <code>object[]</code>, and <code>Execute</code> returns an <code>object</code>, which can box a value-type result. Each call also creates its VM state and stack buffer.</p>
+
+        <h2>3. Decode each method once</h2>
+        <p>Before, the execution call received raw bytes and read opcodes and operands again each time:</p>
+        <pre><code>Execute(byte[] byteCode, object[] arguments)
+    // read opcode and operand, then run handler
+    // repeat for every instruction on every call</code></pre>
+        <p>Now the bytecode is compiled to an instruction array and passed to the same shared interpreter:</p>
+        <pre><code>VirtualMachineProgram program = Compile(byteCode); // generated type initializer
+Execute(program, arguments);                       // each method call</code></pre>
+        <p>The generated cache type's static initializer calls <code>Compile</code> for its converted methods and stores each resulting program in a static field. The first access initializes that cache type; later calls reuse the decoded instruction arrays. Immediate values and <code>ldstr</code> strings are decoded before the execution loop.</p>
+        <p>This moves work to first use and keeps each compiled program in memory for the lifetime of its cache type. The execution call still creates a state and the rewritten method still builds its argument array. All protected methods continue through the one <code>Execute(VirtualMachineProgram, object[])</code> path and their <code>IOpCode</code> handlers; this does not replace interpretation with generated native code.</p>
+
+        <h2>A narrow before-and-after measurement</h2>
+        <p>I built both revisions in Release mode with SDK 10.0.401 and ran them on Windows 11 x64 with .NET 9.0.18 and an Intel Core i9-14900K. The before build uses repository revision <code>69fed23</code>. The test bytecode starts at zero and adds one 64 times, for 129 instructions and 64 <code>Add</code> operations per VM call. Each timed round made 50,000 calls with the same empty argument array. The old path decoded the raw bytecode on every call; the new path compiled it once before measurement. Seven timed rounds followed 2,000 warm-up calls; the first timed round was excluded and the median of the remaining six is shown.</p>
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead><tr><th>Measurement</th><th>Before</th><th>After</th><th>Difference</th></tr></thead>
+            <tbody>
+              <tr><td>Median time (range) for 50,000 calls</td><td>83.9 ms (82.4–84.7)</td><td>49.9 ms (49.3–51.0)</td><td>1.68× in this workload; 40.5% less elapsed time</td></tr>
+              <tr><td>Managed allocation per call</td><td>3,232 bytes</td><td>208 bytes</td><td>93.6% fewer allocated bytes</td></tr>
+              <tr><td>Returned checksum per round</td><td>3,200,000</td><td>3,200,000</td><td>Same result</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Allocation counts came from <code>GC.GetAllocatedBytesForCurrentThread</code>; bytecode construction, the one-time compile, and the shared empty argument array were outside the timed region. The benchmark compares all three runtime changes together, so it does not attribute the difference to dispatch, the stack, or decoding separately.</p>
+
+        <div class="fact-box">
+          <strong>What this result supports</strong>
+          <p>For this constant-heavy I4 program on this .NET 9 x64 machine, the revised interpreter completed the measured calls sooner and allocated fewer managed bytes. This is one microbenchmark, not a general speed guarantee. It excludes generated method-stub work, non-empty argument arrays, other value kinds, other runtimes, and first-use compilation cost.</p>
+        </div>
+
+        <p>The implementation was also covered by the existing 17 unit tests and the 26-entry protected sample matrix in x86 and x64 processes. Those checks verify the tested behavior across the configured targets; they are not performance measurements.</p>
+
+        <div class="article-end">
+          <p><a href="../index.html">← Back to all notes</a></p>
+        </div>
+      </div>
+
+      <nav class="post-nav" aria-label="Related articles">
+        <a href="method-virtualization.html">← Virtualization path</a>
+        <a href="../architecture.html">VM architecture →</a>
+      </nav>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>Dispatch: 256-slot handler array<br>Operand stack: VirtualMachineValue[]<br>Decode: cached per converted method<br>Benchmark: .NET 9.0.18 x64<br>50,000 calls: 83.9 ms → 49.9 ms<br>Allocated/call: 3,232 B → 208 B</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="../index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="../site.js" defer></script>
+</body>
+</html>

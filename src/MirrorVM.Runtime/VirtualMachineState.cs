@@ -1,83 +1,67 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-using System.Collections.Generic;
 using System;
-using System.Text;
 
 namespace MirrorVM
 {
     public sealed class VirtualMachineState
     {
-        private readonly Stack<object> _stack = new Stack<object>();
-        private readonly byte[] _byteCode;
+        private VirtualMachineValue[] _stack = new VirtualMachineValue[4];
         private readonly object[] _arguments;
-        private int _instructionPointer;
+        private int _stackCount;
+        private VirtualMachineValue _operand;
 
         public VirtualMachineState()
-            : this(null, null)
         {
         }
 
-        internal VirtualMachineState(byte[] byteCode, object[] arguments)
+        internal VirtualMachineState(object[] arguments)
         {
-            _byteCode = byteCode;
             _arguments = arguments;
         }
 
-        public int StackCount
-        {
-            get { return _stack.Count; }
-        }
+        public int StackCount { get { return _stackCount; } }
 
-        public object Pop()
+        public VirtualMachineValue Pop()
         {
-            if (_stack.Count == 0)
+            if (_stackCount == 0)
             {
                 throw new InvalidProgramException("The VM stack is empty.");
             }
 
-            return _stack.Pop();
-        }
-
-        public void Push(object value)
-        {
-            _stack.Push(value);
-        }
-
-        internal bool HasRemainingByteCode
-        {
-            get { return _instructionPointer < _byteCode.Length; }
-        }
-
-        public byte ReadByte()
-        {
-            if (_byteCode == null || _instructionPointer >= _byteCode.Length)
-            {
-                throw new InvalidProgramException("The virtual bytecode is truncated.");
-            }
-
-            return _byteCode[_instructionPointer++];
-        }
-
-        public int ReadInt32()
-        {
-            if (_byteCode == null || _instructionPointer > _byteCode.Length - 4)
-            {
-                throw new InvalidProgramException("The virtual Int32 operand is truncated.");
-            }
-
-            int value = unchecked(
-                _byteCode[_instructionPointer] |
-                (_byteCode[_instructionPointer + 1] << 8) |
-                (_byteCode[_instructionPointer + 2] << 16) |
-                (_byteCode[_instructionPointer + 3] << 24));
-            _instructionPointer += 4;
+            VirtualMachineValue value = _stack[--_stackCount];
+            _stack[_stackCount] = default(VirtualMachineValue);
             return value;
         }
 
-        public object ReadArgument()
+        public void Push(VirtualMachineValue value)
+        {
+            if (_stackCount == _stack.Length)
+            {
+                Array.Resize(ref _stack, _stack.Length * 2);
+            }
+
+            _stack[_stackCount++] = value;
+        }
+
+        internal void SetInstructionOperand(VirtualMachineValue operand)
+        {
+            _operand = operand;
+        }
+
+        internal byte ReadByte()
+        {
+            return unchecked((byte)_operand.AsInt32());
+        }
+
+        internal int ReadInt32()
+        {
+            return _operand.AsInt32();
+        }
+
+        internal VirtualMachineValue ReadArgument()
         {
             int index = ReadByte();
-            if (_arguments == null || index >= _arguments.Length)
+            if (index >= _arguments.Length)
             {
                 throw new InvalidProgramException("The bytecode references a missing method argument.");
             }
@@ -85,39 +69,24 @@ namespace MirrorVM
             return NumericArithmetic.NormalizeStackValue(_arguments[index]);
         }
 
-        public long ReadInt64()
+        internal long ReadInt64()
         {
-            if (_byteCode == null || _instructionPointer > _byteCode.Length - 8)
-            {
-                throw new InvalidProgramException("The virtual Int64 operand is truncated.");
-            }
-
-            int low = ReadInt32();
-            int high = ReadInt32();
-            return unchecked((long)((ulong)(uint)low | ((ulong)(uint)high << 32)));
+            return _operand.AsInt64();
         }
 
-        public float ReadSingle()
+        internal float ReadSingle()
         {
-            return BitConverter.ToSingle(BitConverter.GetBytes(ReadInt32()), 0);
+            return _operand.AsSingle();
         }
 
-        public double ReadDouble()
+        internal double ReadDouble()
         {
-            return BitConverter.ToDouble(BitConverter.GetBytes(ReadInt64()), 0);
+            return _operand.AsDouble();
         }
 
-        public string ReadString()
+        internal string ReadString()
         {
-            int byteCount = ReadInt32();
-            if (byteCount < 0 || byteCount > _byteCode.Length - _instructionPointer)
-            {
-                throw new InvalidProgramException("The Ldstr operand is truncated or has an invalid length.");
-            }
-
-            string value = Encoding.UTF8.GetString(_byteCode, _instructionPointer, byteCount);
-            _instructionPointer += byteCount;
-            return value;
+            return (string)_operand.AsObject();
         }
     }
 }

@@ -6,8 +6,8 @@ namespace MirrorVM.OpCodes
         public string Name { get { return "ShrUn"; } }
         public void Execute(VirtualMachineState state)
         {
-            object count = state.Pop();
-            object value = state.Pop();
+            VirtualMachineValue count = state.Pop();
+            VirtualMachineValue value = state.Pop();
             state.Push(NumericArithmetic.Shift(VirtualOpCode.ShrUn, value, count));
         }
     }

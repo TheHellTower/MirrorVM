@@ -246,7 +246,7 @@ namespace MirrorVM.Sample
                     ? new byte[] { (byte)VirtualOpCode.LoadArgument, 0, (byte)opcode }
                     : new byte[] { (byte)VirtualOpCode.LoadArgument, 0,
                         (byte)VirtualOpCode.LoadArgument, 1, (byte)opcode };
-                actual = VirtualMachine.Execute(code, values);
+                actual = VirtualMachine.Execute(VirtualMachine.Compile(code), values);
             }
             catch (Exception exception) { vmError = exception; }
 

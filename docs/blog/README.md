@@ -10,8 +10,9 @@ ready to use as a GitHub Pages publishing source; Pages still needs to be
 enabled and configured in the repository settings.
 
 The top navigation links to Virtualization, Compatibility, and Architecture.
-The project notes list the M1 and M2 posts, compatibility evidence, and
-architecture. Milestone post titles match their README milestone names.
+The project notes list the M1 and M2 posts, compatibility evidence, VM
+architecture, and interpreter optimizations. Milestone post titles match their
+README milestone names.
 
 The compatibility goal spans .NET Framework 2.0 through 4.8.1 and modern .NET
 through 10. The runtime targets `net20`, `netstandard2.0`, and `net9.0`; the

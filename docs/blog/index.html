@@ -29,7 +29,7 @@
       <h1>Make the machine<br><em>easy to read.</em></h1>
       <div class="hero-bottom">
         <p class="hero-summary">Notes on .NET execution, virtual machines, and reverse engineering. MirrorVM development sits alongside the wider technical questions that help explain it.</p>
-        <p class="hero-index"><span>01—04</span><br>Current notes<br>October 2026</p>
+        <p class="hero-index"><span>01—05</span><br>Current notes<br>October 2026</p>
       </div>
       <div class="hero-rule" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
     </section>
@@ -40,7 +40,7 @@
           <p class="eyebrow">From the notebook</p>
           <h2 id="notes-title">Project notes</h2>
         </div>
-        <p class="section-aside">Four pages cover the M1 and M2 milestones, compatibility evidence, and VM architecture.</p>
+        <p class="section-aside">Five notes cover the M1 and M2 milestones, compatibility evidence, VM architecture, and interpreter design.</p>
       </div>
 
       <div class="note-list">
@@ -71,12 +71,11 @@
           <div class="note-content">
             <p class="note-meta"><span>Architecture</span><span>4 Oct 2026</span></p>
             <h3><a href="architecture.html">How MirrorVM executes a protected method</a></h3>
-            <p class="note-description">Follow a method from CIL conversion through bytecode dispatch and opcode handlers to its typed return.</p>
+            <p class="note-description">Follow CIL conversion, cached decoded programs, indexed dispatch, the VM value stack, and the shared return path.</p>
             <a class="read-link" href="architecture.html">Read the page <span aria-hidden="true">&#8599;</span></a>
           </div>
           <div class="note-glyph glyph-stack" aria-hidden="true"><span>13</span><span>-5</span><b>/</b></div>
         </article>
-
         <article class="note-card">
           <div class="note-number" aria-hidden="true">04</div>
           <div class="note-content">
@@ -87,7 +86,16 @@
           </div>
           <div class="note-glyph glyph-stack" aria-hidden="true"><span>I4</span><span>I8</span><b>&#8594;</b></div>
         </article>
-
+        <article class="note-card">
+          <div class="note-number" aria-hidden="true">05</div>
+          <div class="note-content">
+            <p class="note-meta"><span>Runtime design</span><span>6 Oct 2026</span></p>
+            <h3><a href="posts/interpreter-optimizations.html">Reducing repeated work in the interpreter</a></h3>
+            <p class="note-description">Before and after: indexed opcode dispatch, inline numeric stack values, and decoded bytecode cached for reuse—with performance limits stated plainly.</p>
+            <a class="read-link" href="posts/interpreter-optimizations.html">Read the note <span aria-hidden="true">&#8599;</span></a>
+          </div>
+          <div class="note-glyph glyph-stack" aria-hidden="true"><span>IL</span><span>VM</span><b>&#8594;</b></div>
+        </article>
       </div>
     </section>
 

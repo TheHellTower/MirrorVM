@@ -27,11 +27,12 @@
     <article class="article-main">
       <div class="article-kicker"><span>Release milestone M2</span><span>4 October 2026</span></div>
       <h1>M2 - Numeric values end to end</h1>
-      <p class="article-deck">MirrorVM converts a linear arithmetic, conversion, and string subset into readable bytecode. The runtime dispatches to CIL-named handlers over one shared stack, and every protected method calls the same object-returning Execute method.</p>
+      <p class="article-deck">MirrorVM converts a linear arithmetic, conversion, and string subset into readable bytecode. The runtime dispatches through an indexed opcode table to CIL-named handlers over one contiguous value stack, and every protected method calls the same object-returning Execute method.</p>
       <div class="article-rule"></div>
 
       <div class="article-body">
-        <p>The VM has one <code>Stack&lt;object&gt;</code>. Load instructions push values with <code>Push</code>. Arithmetic handlers pop their operands with <code>Pop</code>, calculate one result, and push that result. There is no numeric-only stack API. The interpreter reads bytecode IDs and calls handlers from a registry; handler instances are created outside the execution loop.</p>
+        <p>The VM has one contiguous <code>VirtualMachineValue[]</code> stack and one <code>Push</code>/<code>Pop</code> pair. Its tagged value struct stores numeric values inline, so arithmetic does not box each intermediate result. The interpreter compiles bytecode once, then dispatches each decoded instruction through a 256-entry opcode table. There is no numeric-only stack API.</p>
+        <p>The before-and-after implementation details and a narrowly scoped measurement are in <a href="interpreter-optimizations.html">Reducing repeated work in the interpreter</a>.</p>
 
         <h2>From C# to MirrorVM bytecode</h2>
         <p>These small methods are part of the sample:</p>
@@ -59,7 +60,7 @@ static string MyString()
         <pre><code>01 00    LoadArgument 0
 01 01    LoadArgument 1
 10       Add</code></pre>
-        <p><code>LoadArgument</code> uses opcode ID <code>0x01</code> followed by a one-byte argument index. Each load pushes that argument. <code>Add</code> has ID <code>0x10</code>, pops right then left, calculates <code>left + right</code>, and pushes one result. The CIL <code>ret</code> is consumed by the converter; the VM program ends when its byte array ends.</p>
+        <p><code>LoadArgument</code> uses opcode ID <code>0x01</code> followed by a one-byte argument index. Each load pushes that argument. <code>Add</code> has ID <code>0x10</code>, pops right then left, calculates <code>left + right</code>, and pushes one result. The CIL <code>ret</code> is consumed by the converter; compilation ends when the byte sequence ends, and execution walks the decoded instruction array.</p>
 
         <p><code>Subtract</code> changes the last byte to <code>0x13</code> (<code>Sub</code>). The three-argument method becomes:</p>
         <pre><code>01 00    LoadArgument 0
@@ -74,7 +75,7 @@ static string MyString()
         <pre><code>03                Ldstr opcode ID
 04 00 00 00       UTF-8 byte count: 4
 54 65 73 74       UTF-8 bytes: "Test"</code></pre>
-        <p><code>Ldstr</code> pushes the decoded string. <code>VirtualMachine.Execute(byte[], object[])</code> returns the one value left on the stack as <code>object</code>. A rewritten <code>string</code> method casts that object back to <code>string</code>; an <code>Int32</code> or <code>UInt32</code> method unboxes the I4 result. This is one runtime entrypoint for all supported result types.</p>
+        <p><code>Ldstr</code> pushes the decoded string. <code>VirtualMachine.Execute(VirtualMachineProgram, object[])</code> returns the one value left on the stack as <code>object</code>. A rewritten <code>string</code> method casts that object back to <code>string</code>; an <code>Int32</code> or <code>UInt32</code> method unboxes the I4 result. This is one runtime entrypoint for all supported result types.</p>
 
         <h2>Arithmetic names and behavior</h2>
         <div class="matrix-wrap">
@@ -103,7 +104,7 @@ static string MyString()
 
         <div class="fact-box">
           <strong>Verified numeric scope</strong>
-          <p>The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes. All 16 unit tests pass on the .NET 9 x64 host. Framework 4.x runs used the installed 4.8.1 in-place CLR.</p>
+          <p>The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes. All 17 unit tests pass on the .NET 9 x64 host. Framework 4.x runs used the installed 4.8.1 in-place CLR.</p>
         </div>
 
         <p>Stable opcode IDs and visible stack effects make the execution path straightforward to inspect and emulate. That supports reverse engineering and defensive research. It is not a guarantee that every downstream use is benign.</p>
@@ -121,7 +122,7 @@ static string MyString()
     <aside class="article-aside">
       <div class="aside-card">
         <p class="eyebrow">At a glance</p>
-        <p>VM stack: one Stack&lt;object&gt;<br>Execution: bytecode → registered handlers<br>Numeric families: arithmetic, conversions, bitwise, shifts, comparisons<br>Matrix: 26 entries passed<br>Unit tests: 21 on .NET 9</p>
+        <p>VM stack: one VirtualMachineValue[]<br>Execution: decoded bytecode → indexed handlers<br>Numeric families: arithmetic, conversions, bitwise, shifts, comparisons<br>Matrix: 26 entries passed<br>Unit tests: 17 on .NET 9</p>
       </div>
     </aside>
   </main>

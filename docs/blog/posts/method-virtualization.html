@@ -34,7 +34,7 @@
         <h2>One command, a sibling output</h2>
         <pre><code>MirrorVM.exe C:\apps\FileToProtect.dll</code></pre>
         <p>The tool writes <code>C:\apps\FileToProtect_MVM.dll</code>. Managed Framework executables can be passed as <code>.exe</code> inputs and get a sibling <code>_MVM.exe</code>. A modern .NET apphost is native; pass its managed DLL instead.</p>
-        <p>For each supported method, the new body builds its serialized bytecode and an <code>object[]</code> containing the original arguments. It calls <code>VirtualMachine.Execute(byte[], object[])</code>, which returns one object. The stub casts or unboxes that result according to the method's declared return type. There is no separate typed entrypoint for strings or integers.</p>
+        <p>For each supported method, a generated per-type initializer builds and compiles its bytecode once, storing a decoded <code>VirtualMachineProgram</code> in a static field. The rewritten body loads that program, builds an <code>object[]</code> containing the original arguments, and calls <code>VirtualMachine.Execute(VirtualMachineProgram, object[])</code>. The stub casts or unboxes the returned object according to the method's declared return type. There is no separate typed entrypoint for strings or integers.</p>
 
         <h2>Supported methods are translated as a unit</h2>
         <p>The converter accepts static, non-generic methods without locals or exception handlers, with at most 256 parameters. Supported parameter and return types are Boolean, the built-in integer types through 64-bit, <code>IntPtr</code>/<code>UIntPtr</code>, <code>Single</code>, <code>Double</code>, <code>Decimal</code>, and <code>String</code>. The linear CIL subset includes argument loads, I4/I8/R4/R8 constants, <code>ldstr</code>, arithmetic, bitwise operations, shifts, comparisons, <code>neg</code>, <code>not</code>, <code>ckfinite</code>, all numeric <code>conv.*</code> opcodes, <code>nop</code>, and a final <code>ret</code>.</p>
@@ -42,11 +42,12 @@
         <p>For example, the sample's branch and method-call bodies remain ordinary CIL and are reported as skipped. Supported arithmetic, string, and numeric bodies are replaced as complete methods. If an input has no supported methods, MirrorVM writes no protected assembly and prints the skip reasons.</p>
 
         <h2>Keep the runtime easy to inspect</h2>
-        <p>The runtime has one <code>Stack&lt;object&gt;</code> and one <code>Push</code>/<code>Pop</code> pair. Each handler performs its stack effect. The interpreter reads bytecode IDs and dispatches to registered handler objects; execution does not allocate an opcode object per instruction. Each handler's class name follows the CIL opcode it serves.</p>
+        <p>The runtime has one contiguous <code>VirtualMachineValue[]</code> stack and one <code>Push</code>/<code>Pop</code> pair. Numeric values stay inline in the tagged value struct; object references use its reference field. The interpreter indexes a 256-entry handler table by byte opcode, and each handler's class name follows the CIL opcode it serves.</p>
+        <p>See <a href="interpreter-optimizations.html">the interpreter optimization note</a> for before-and-after paths and what still allocates.</p>
         <p>This structure is meant to be identifiable and traceable. It helps a reverse engineer follow a protected method from its rewritten stub, through bytecode dispatch, into the corresponding handler. MirrorVM includes no anti-debugging, anti-tamper, or concealment feature.</p>
 
         <h2>Verification and boundaries</h2>
-        <p>The Release solution builds 25 configured sample targets. The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 16 unit tests pass on the .NET 9 x64 host. Framework 4.x targets ran on the installed 4.8.1 in-place CLR; those runs do not test separate historical 4.x runtimes.</p>
+        <p>The Release solution builds 25 configured sample targets. The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 17 unit tests pass on the .NET 9 x64 host. Framework 4.x targets ran on the installed 4.8.1 in-place CLR; those runs do not test separate historical 4.x runtimes.</p>
         <p>Assemblies carrying a strong-name public key and mixed-mode assemblies are rejected; the tool does not accept a signing key to re-sign rewritten output. Native apphosts are also rejected. For modern .NET inputs, runtime/deps sidecars are renamed and updated, and a compatible <code>MirrorVM.Runtime.dll</code> is placed next to the result.</p>
         <p>The virtualizer and unit tests target .NET 9. The runtime library builds for <code>net20</code>, <code>netstandard2.0</code>, and <code>net9.0</code>. The checked matrix covers the configured sample targets, while unsupported method features stay outside the current release scope.</p>
 
@@ -68,7 +69,7 @@
     <aside class="article-aside">
       <div class="aside-card">
         <p class="eyebrow">At a glance</p>
-        <p>Input: managed .NET exe/dll<br>Output: sibling _MVM exe/dll<br>Shared runtime entrypoint: Execute(byte[], object[])<br>M1 and M2 matrix: passed</p>
+        <p>Input: managed .NET exe/dll<br>Output: sibling _MVM exe/dll<br>Shared runtime entrypoint: Execute(program, arguments)<br>M1 and M2 matrix: passed</p>
       </div>
     </aside>
   </main>

@@ -46,7 +46,7 @@ namespace MirrorVM.Tests
                 (byte)VirtualOpCode.Sub
             };
 
-            object result = VirtualMachine.Execute(byteCode, new object[] { 40, 4, 2 });
+            object result = Execute(byteCode, new object[] { 40, 4, 2 });
 
             Assert.IsType<int>(result);
             Assert.Equal(42, result);
@@ -62,7 +62,7 @@ namespace MirrorVM.Tests
             WriteInt32(byteCode, 1, utf8.Length);
             Array.Copy(utf8, 0, byteCode, 5, utf8.Length);
 
-            object result = VirtualMachine.Execute(byteCode, new object[0]);
+            object result = Execute(byteCode, new object[0]);
 
             Assert.IsType<string>(result);
             Assert.Equal(expected, result);
@@ -78,7 +78,21 @@ namespace MirrorVM.Tests
                 (byte)VirtualOpCode.Add
             };
 
-            Assert.Equal(42, VirtualMachine.Execute(byteCode, new object[0]));
+            Assert.Equal(42, Execute(byteCode, new object[0]));
+        }
+
+        [Fact]
+        public void CompiledBytecodeCanBeExecutedRepeatedlyWithDifferentArguments()
+        {
+            VirtualMachineProgram program = VirtualMachine.Compile(new byte[]
+            {
+                (byte)VirtualOpCode.LoadArgument, 0,
+                (byte)VirtualOpCode.LoadArgument, 1,
+                (byte)VirtualOpCode.Add
+            });
+
+            Assert.Equal(42, VirtualMachine.Execute(program, new object[] { 40, 2 }));
+            Assert.Equal(17, VirtualMachine.Execute(program, new object[] { 8, 9 }));
         }
 
         [Fact]
@@ -88,19 +102,19 @@ namespace MirrorVM.Tests
             byte[] int64Code = new byte[9];
             int64Code[0] = (byte)VirtualOpCode.LoadInt64;
             WriteInt64(int64Code, 1, expectedInt64);
-            Assert.Equal(expectedInt64, VirtualMachine.Execute(int64Code, new object[0]));
+            Assert.Equal(expectedInt64, Execute(int64Code, new object[0]));
 
             float expectedSingle = 1.25f;
             byte[] singleCode = new byte[5];
             singleCode[0] = (byte)VirtualOpCode.LoadSingle;
             WriteInt32(singleCode, 1, BitConverter.ToInt32(BitConverter.GetBytes(expectedSingle), 0));
-            Assert.Equal((double)expectedSingle, VirtualMachine.Execute(singleCode, new object[0]));
+            Assert.Equal((double)expectedSingle, Execute(singleCode, new object[0]));
 
             double expectedDouble = -Math.PI;
             byte[] doubleCode = new byte[9];
             doubleCode[0] = (byte)VirtualOpCode.LoadDouble;
             WriteInt64(doubleCode, 1, BitConverter.ToInt64(BitConverter.GetBytes(expectedDouble), 0));
-            Assert.Equal(expectedDouble, VirtualMachine.Execute(doubleCode, new object[0]));
+            Assert.Equal(expectedDouble, Execute(doubleCode, new object[0]));
         }
 
         [Fact]
@@ -108,10 +122,18 @@ namespace MirrorVM.Tests
         {
             VirtualMachineState state = new VirtualMachineState();
 
-            state.Push(42);
+            state.Push(40);
+            state.Push(2);
+            state.Push(1);
+            state.Push(2);
+            state.Push(3);
 
-            Assert.Equal(1, state.StackCount);
-            Assert.Equal(42, state.Pop());
+            Assert.Equal(5, state.StackCount);
+            Assert.Equal(3, state.Pop().ToObject());
+            Assert.Equal(2, state.Pop().ToObject());
+            Assert.Equal(1, state.Pop().ToObject());
+            Assert.Equal(2, state.Pop().ToObject());
+            Assert.Equal(40, state.Pop().ToObject());
             Assert.Equal(0, state.StackCount);
         }
 
@@ -233,34 +255,34 @@ namespace MirrorVM.Tests
         [Fact]
         public void ExecuteRejectsMalformedBytecodeAndIncorrectStackResults()
         {
-            Assert.Throws<ArgumentNullException>(() => VirtualMachine.Execute(null, new object[0]));
-            Assert.Throws<ArgumentNullException>(() => VirtualMachine.Execute(new byte[0], null));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(new byte[0], new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(new byte[] { 0xFE }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<ArgumentNullException>(() => Execute(null, new object[0]));
+            Assert.Throws<ArgumentNullException>(() => Execute(new byte[0], null));
+            Assert.Throws<InvalidProgramException>(() => Execute(new byte[0], new object[0]));
+            Assert.Throws<InvalidProgramException>(() => Execute(new byte[] { 0xFE }, new object[0]));
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadArgument }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadArgument, 0 }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadInt32, 1 }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadInt64, 1, 2, 3, 4 }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadSingle, 1 }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadDouble, 1, 2, 3, 4 }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.Ldstr, 4, 0, 0, 0, (byte)'T' }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.Add }, new object[0]));
-            Assert.Throws<InvalidProgramException>(() => VirtualMachine.Execute(
+            Assert.Throws<InvalidProgramException>(() => Execute(
                 new byte[] { (byte)VirtualOpCode.LoadArgument, 0, (byte)VirtualOpCode.LoadArgument, 1 },
                 new object[] { 1, 2 }));
         }
 
         private static void AssertBinary(VirtualOpCode opcode, object left, object right, object expected)
         {
-            object actual = VirtualMachine.Execute(
+            object actual = Execute(
                 new byte[]
                 {
                     (byte)VirtualOpCode.LoadArgument, 0,
@@ -279,7 +301,7 @@ namespace MirrorVM.Tests
             object right,
             Type exceptionType)
         {
-            Exception exception = Record.Exception(() => VirtualMachine.Execute(
+            Exception exception = Record.Exception(() => Execute(
                 new byte[]
                 {
                     (byte)VirtualOpCode.LoadArgument, 0,
@@ -294,12 +316,17 @@ namespace MirrorVM.Tests
 
         private static void AssertUnary(VirtualOpCode opcode, object value, object expected)
         {
-            object actual = VirtualMachine.Execute(
+            object actual = Execute(
                 new byte[] { (byte)VirtualOpCode.LoadArgument, 0, (byte)opcode },
                 new object[] { value });
 
             Assert.Equal(expected, actual);
             Assert.Equal(expected.GetType(), actual.GetType());
+        }
+
+        private static object Execute(byte[] byteCode, object[] arguments)
+        {
+            return VirtualMachine.Execute(VirtualMachine.Compile(byteCode), arguments);
         }
 
         private static void WriteInt32(byte[] target, int offset, int value)

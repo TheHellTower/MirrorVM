@@ -50,11 +50,12 @@
         <p>Framework 4.x uses the machine's .NET Framework 4.8.1 in-place CLR, so those runs verify target-specific sample builds under that runtime, not the behavior of each historical 4.x runtime installed separately. The Framework 3.0 entry reuses the Framework 2.0 sample because the old SDK has no separate 3.0 reference pack.</p>
         <div class="fact-box">
           <strong>Verified scope</strong>
-          <p>The Release solution builds 25 configured sample targets. The 26-entry protected sample matrix passed in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 16 unit tests pass on the .NET 9 x64 host. Framework 4.x execution uses the installed 4.8.1 in-place CLR.</p>
+          <p>The Release solution builds 25 configured sample targets. The 26-entry protected sample matrix passed in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 17 unit tests pass on the .NET 9 x64 host. Framework 4.x execution uses the installed 4.8.1 in-place CLR.</p>
         </div>
+        <p>This matrix verifies behavior for the current sample and implemented numeric comparisons; it is not a performance benchmark. The dispatch, stack, and decode changes are described in <a href="interpreter-optimizations.html">Reducing repeated work in the interpreter</a>, with timing results scoped to that post's workload.</p>
 
         <h2>Why the old target is separate</h2>
-        <p>.NET Standard 2.0 does not cover Framework 2.0, so the runtime is also compiled against the older framework surface. The virtualizer bundles that <code>net20</code> runtime beside a protected output when one is not already present. The protected methods use ordinary arrays, boxing, and a call to <code>Execute(byte[], object[])</code>, keeping their rewritten stubs simple enough for the old target.</p>
+        <p>.NET Standard 2.0 does not cover Framework 2.0, so the runtime is also compiled against the older framework surface. The virtualizer bundles that <code>net20</code> runtime beside a protected output when one is not already present. The protected methods use ordinary arrays and a call to the shared <code>Execute(VirtualMachineProgram, object[])</code> entrypoint, keeping their rewritten stubs compatible with the old target.</p>
         <p>For Framework 4.6.1 and later, .NET Standard 2.0 is the intended shared library path. Microsoft's documentation notes that .NET Framework 4.6.1 has known .NET Standard consumption issues and recommends 4.7.2 or later. See <a href="https://learn.microsoft.com/dotnet/standard/net-standard?tabs=net-standard-2-0">Microsoft's .NET Standard support matrix</a> and <a href="https://learn.microsoft.com/en-us/dotnet/core/porting/framework-overview">the .NET Framework porting overview</a>.</p>
 
         <h2>Keep the compatibility claim narrow</h2>
