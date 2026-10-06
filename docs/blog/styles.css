@@ -32,6 +32,7 @@ body {
 
 a { color: inherit; }
 a:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; }
+code { color: rgb(220, 220, 170); }
 
 .skip-link {
   position: absolute;
@@ -284,7 +285,13 @@ main { width: min(1100px, calc(100% - 3rem)); margin: auto; }
 .article-body a { color: var(--green); text-decoration-thickness: 1px; text-underline-offset: .17em; }
 .article-body code { font-family: var(--mono); font-size: .83em; }
 .article-body pre { overflow-x: auto; margin: 1.2rem 0; padding: 1.25rem 1.4rem; border-left: 3px solid var(--orange); background: #1d2a2d; color: var(--ink); font-family: var(--mono); font-size: .8rem; line-height: 1.65; }
-.article-body pre code { font-size: inherit; }
+.article-body pre code { color: var(--ink); font-size: inherit; }
+.syntax-keyword { color: #569cd6; }
+.syntax-type { color: #4ec9b0; }
+.syntax-method { color: rgb(220, 220, 170); }
+.syntax-string { color: #ce9178; }
+.syntax-number { color: #b5cea8; }
+.syntax-comment { color: #6a9955; font-style: italic; }
 .article-aside { padding-top: 8rem; }
 .aside-card { position: sticky; top: 2rem; padding: 1.2rem; border-top: 2px solid var(--green); background: rgba(24, 35, 38, .86); }
 .aside-card .eyebrow { font-size: .61rem; }

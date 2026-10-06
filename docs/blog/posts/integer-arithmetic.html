@@ -36,24 +36,24 @@
 
         <h2>From C# to MirrorVM bytecode</h2>
         <p>These small methods are part of the sample:</p>
-        <pre><code>static int Add(int left, int right)
+        <pre><code><span class="syntax-keyword">static</span> <span class="syntax-keyword">int</span> <span class="syntax-method">Add</span>(<span class="syntax-keyword">int</span> left, <span class="syntax-keyword">int</span> right)
 {
-    return left + right;
+    <span class="syntax-keyword">return</span> left + right;
 }
 
-static int Subtract(int left, int right)
+<span class="syntax-keyword">static</span> <span class="syntax-keyword">int</span> <span class="syntax-method">Subtract</span>(<span class="syntax-keyword">int</span> left, <span class="syntax-keyword">int</span> right)
 {
-    return left - right;
+    <span class="syntax-keyword">return</span> left - right;
 }
 
-static int AddThenSubtract(int left, int right, int adjustment)
+<span class="syntax-keyword">static</span> <span class="syntax-keyword">int</span> <span class="syntax-method">AddThenSubtract</span>(<span class="syntax-keyword">int</span> left, <span class="syntax-keyword">int</span> right, <span class="syntax-keyword">int</span> adjustment)
 {
-    return left + right - adjustment;
+    <span class="syntax-keyword">return</span> left + right - adjustment;
 }
 
-static string MyString()
+<span class="syntax-keyword">static</span> <span class="syntax-keyword">string</span> <span class="syntax-method">MyString</span>()
 {
-    return "Test";
+    <span class="syntax-keyword">return</span> <span class="syntax-string">&quot;Test&quot;</span>;
 }</code></pre>
 
         <p>For <code>Add</code>, the converter reads the CIL argument loads and <code>add</code>, then emits:</p>

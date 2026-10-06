@@ -33,38 +33,38 @@
       <div class="article-body">
         <h2>1. Dispatch by bytecode index</h2>
         <p>Before, every instruction looked up its handler in a dictionary and checked the lookup result inside the execution loop:</p>
-        <pre><code>IOpCode handler;
-if (!ByteCodeOpCodes.TryGetValue(opcode, out handler))
-    throw new InvalidProgramException(...);
-handler.Execute(state);</code></pre>
+        <pre><code><span class="syntax-type">IOpCode</span> handler;
+<span class="syntax-keyword">if</span> (!ByteCodeOpCodes.<span class="syntax-method">TryGetValue</span>(opcode, <span class="syntax-keyword">out</span> handler))
+    <span class="syntax-keyword">throw</span> <span class="syntax-keyword">new</span> <span class="syntax-type">InvalidProgramException</span>(...);
+handler.<span class="syntax-method">Execute</span>(state);</code></pre>
         <p>Now the byte opcode indexes a 256-slot array directly:</p>
-        <pre><code>ByteCodeOpCodes[instruction.OpCode].Execute(state);</code></pre>
+        <pre><code>ByteCodeOpCodes[instruction.OpCode].<span class="syntax-method">Execute</span>(state);</code></pre>
         <p><code>Compile</code> checks that a handler exists while it reads the bytecode. The execution loop no longer hashes a key or repeats the unknown-opcode branch for every instruction. The selected <code>IOpCode</code> handler still performs the instruction's stack work.</p>
 
         <h2>2. Keep numeric values in the VM stack</h2>
         <p>Before, <code>Stack&lt;object&gt;</code> held each numeric value as a boxed object:</p>
-        <pre><code>private readonly Stack&lt;object&gt; _stack = new Stack&lt;object&gt;();
-object right = state.Pop();
-object left = state.Pop();
-state.Push(NumericArithmetic.Apply(operation, left, right));</code></pre>
+        <pre><code><span class="syntax-keyword">private</span> <span class="syntax-keyword">readonly</span> <span class="syntax-type">Stack</span>&lt;<span class="syntax-keyword">object</span>&gt; _stack = <span class="syntax-keyword">new</span> <span class="syntax-type">Stack</span>&lt;<span class="syntax-keyword">object</span>&gt;();
+<span class="syntax-keyword">object</span> right = state.<span class="syntax-method">Pop</span>();
+<span class="syntax-keyword">object</span> left = state.<span class="syntax-method">Pop</span>();
+state.<span class="syntax-method">Push</span>(<span class="syntax-type">NumericArithmetic</span>.<span class="syntax-method">Apply</span>(operation, left, right));</code></pre>
         <p>Now the VM owns a resizable array of tagged values and a stack count:</p>
-        <pre><code>private VirtualMachineValue[] _stack = new VirtualMachineValue[4];
-private int _stackCount;
+        <pre><code><span class="syntax-keyword">private</span> <span class="syntax-type">VirtualMachineValue</span>[] _stack = <span class="syntax-keyword">new</span> <span class="syntax-type">VirtualMachineValue</span>[<span class="syntax-number">4</span>];
+<span class="syntax-keyword">private</span> <span class="syntax-keyword">int</span> _stackCount;
 
-VirtualMachineValue right = state.Pop();
-VirtualMachineValue left = state.Pop();
-state.Push(NumericArithmetic.Apply(operation, left, right));</code></pre>
+<span class="syntax-type">VirtualMachineValue</span> right = state.<span class="syntax-method">Pop</span>();
+<span class="syntax-type">VirtualMachineValue</span> left = state.<span class="syntax-method">Pop</span>();
+state.<span class="syntax-method">Push</span>(<span class="syntax-type">NumericArithmetic</span>.<span class="syntax-method">Apply</span>(operation, left, right));</code></pre>
         <p><code>VirtualMachineValue</code> stores the kind and numeric bits inline; its reference field carries strings and other objects. This removes boxing of intermediate numeric values during arithmetic. The old <code>Stack&lt;object&gt;</code> was itself array-backed, so the change is not from a linked list to contiguous memory: it is an explicit value array with direct stack indexing and inline numeric storage.</p>
         <p>Boxing remains at the current method boundary. Rewritten stubs place value-type arguments in an <code>object[]</code>, and <code>Execute</code> returns an <code>object</code>, which can box a value-type result. Each call also creates its VM state and stack buffer.</p>
 
         <h2>3. Decode each method once</h2>
         <p>Before, the execution call received raw bytes and read opcodes and operands again each time:</p>
-        <pre><code>Execute(byte[] byteCode, object[] arguments)
-    // read opcode and operand, then run handler
-    // repeat for every instruction on every call</code></pre>
+        <pre><code><span class="syntax-method">Execute</span>(<span class="syntax-keyword">byte</span>[] byteCode, <span class="syntax-keyword">object</span>[] arguments)
+    <span class="syntax-comment">// read opcode and operand, then run handler</span>
+    <span class="syntax-comment">// repeat for every instruction on every call</span></code></pre>
         <p>Now the bytecode is compiled to an instruction array and passed to the same shared interpreter:</p>
-        <pre><code>VirtualMachineProgram program = Compile(byteCode); // generated type initializer
-Execute(program, arguments);                       // each method call</code></pre>
+        <pre><code><span class="syntax-type">VirtualMachineProgram</span> program = <span class="syntax-method">Compile</span>(byteCode); <span class="syntax-comment">// generated type initializer</span>
+<span class="syntax-method">Execute</span>(program, arguments);                       <span class="syntax-comment">// each method call</span></code></pre>
         <p>The generated cache type's static initializer calls <code>Compile</code> for its converted methods and stores each resulting program in a static field. The first access initializes that cache type; later calls reuse the decoded instruction arrays. Immediate values and <code>ldstr</code> strings are decoded before the execution loop.</p>
         <p>This moves work to first use and keeps each compiled program in memory for the lifetime of its cache type. The execution call still creates a state and the rewritten method still builds its argument array. All protected methods continue through the one <code>Execute(VirtualMachineProgram, object[])</code> path and their <code>IOpCode</code> handlers; this does not replace interpretation with generated native code.</p>
 
