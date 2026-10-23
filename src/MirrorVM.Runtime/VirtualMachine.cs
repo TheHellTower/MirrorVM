@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
 using System.Collections.Generic;
-using System.Text;
 using MirrorVM.OpCodes;
 
 namespace MirrorVM
@@ -19,6 +18,8 @@ namespace MirrorVM
 
             ByteCodeReader reader = new ByteCodeReader(byteCode);
             List<VirtualMachineInstruction> instructions = new List<VirtualMachineInstruction>();
+            List<VirtualMachineLocalKind> localKinds = new List<VirtualMachineLocalKind>();
+            List<bool> definedLocals = new List<bool>();
             while (reader.HasRemaining)
             {
                 byte opcode = reader.ReadByte();
@@ -31,7 +32,7 @@ namespace MirrorVM
                 switch ((VirtualOpCode)opcode)
                 {
                     case VirtualOpCode.LoadArgument:
-                        operand = VirtualMachineValue.FromInt32(reader.ReadByte());
+                        operand = VirtualMachineValue.FromInt32(reader.ReadUInt16());
                         break;
                     case VirtualOpCode.LoadInt32:
                         operand = VirtualMachineValue.FromInt32(reader.ReadInt32());
@@ -46,14 +47,81 @@ namespace MirrorVM
                         operand = VirtualMachineValue.FromDoubleBits(reader.ReadInt64());
                         break;
                     case VirtualOpCode.Ldstr:
-                        operand = VirtualMachineValue.FromObject(reader.ReadString());
+                        operand = VirtualMachineValue.FromObject(string.Intern(reader.ReadString()));
+                        break;
+                    case VirtualOpCode.Ldloc:
+                    case VirtualOpCode.Stloc:
+                        int localIndex = reader.ReadUInt16();
+                        byte localKindValue = reader.ReadByte();
+                        if (localKindValue > (byte)VirtualMachineLocalKind.String)
+                        {
+                            throw new InvalidProgramException("The bytecode contains an invalid local kind.");
+                        }
+
+                        while (localKinds.Count <= localIndex)
+                        {
+                            localKinds.Add(VirtualMachineLocalKind.Int32);
+                            definedLocals.Add(false);
+                        }
+
+                        VirtualMachineLocalKind localKind = (VirtualMachineLocalKind)localKindValue;
+                        if (definedLocals[localIndex] && localKinds[localIndex] != localKind)
+                        {
+                            throw new InvalidProgramException("The bytecode assigns incompatible kinds to one local.");
+                        }
+
+                        localKinds[localIndex] = localKind;
+                        definedLocals[localIndex] = true;
+                        operand = VirtualMachineValue.FromInt32(localIndex | (localKindValue << 16));
+                        break;
+                    case VirtualOpCode.Br:
+                    case VirtualOpCode.Brfalse:
+                    case VirtualOpCode.Brtrue:
+                    case VirtualOpCode.Beq:
+                    case VirtualOpCode.Bge:
+                    case VirtualOpCode.BgeUn:
+                    case VirtualOpCode.Bgt:
+                    case VirtualOpCode.BgtUn:
+                    case VirtualOpCode.Ble:
+                    case VirtualOpCode.BleUn:
+                    case VirtualOpCode.Blt:
+                    case VirtualOpCode.BltUn:
+                    case VirtualOpCode.BneUn:
+                        operand = VirtualMachineValue.FromInt32(reader.ReadInt32());
+                        break;
+                    case VirtualOpCode.Switch:
+                        int targetCount = reader.ReadInt32();
+                        if (targetCount < 0 || targetCount > reader.Remaining / 4)
+                        {
+                            throw new InvalidProgramException("The switch target table is truncated or has an invalid length.");
+                        }
+
+                        int[] targets = new int[targetCount];
+                        for (int index = 0; index < targetCount; index++)
+                        {
+                            targets[index] = reader.ReadInt32();
+                        }
+
+                        operand = VirtualMachineValue.FromObject(targets);
                         break;
                 }
 
                 instructions.Add(new VirtualMachineInstruction(opcode, operand));
             }
 
-            return new VirtualMachineProgram(instructions.ToArray());
+            ValidateBranchTargets(instructions);
+            VirtualMachineValue[] localDefaults = new VirtualMachineValue[localKinds.Count];
+            for (int index = 0; index < localDefaults.Length; index++)
+            {
+                if (!definedLocals[index])
+                {
+                    throw new InvalidProgramException("The bytecode references an undefined local.");
+                }
+
+                localDefaults[index] = GetLocalDefault(localKinds[index]);
+            }
+
+            return new VirtualMachineProgram(instructions.ToArray(), localDefaults);
         }
 
         public static object Execute(VirtualMachineProgram program, object[] arguments)
@@ -68,18 +136,31 @@ namespace MirrorVM
                 throw new ArgumentNullException("arguments");
             }
 
-            VirtualMachineState state = new VirtualMachineState(arguments);
+            VirtualMachineState state = new VirtualMachineState(arguments, program.LocalDefaults);
             VirtualMachineInstruction[] instructions = program.Instructions;
-            for (int index = 0; index < instructions.Length; index++)
+            int instructionPointer = 0;
+            while (instructionPointer < instructions.Length)
             {
-                VirtualMachineInstruction instruction = instructions[index];
+                VirtualMachineInstruction instruction = instructions[instructionPointer];
+                state.InstructionPointer = instructionPointer + 1;
                 state.SetInstructionOperand(instruction.Operand);
                 ByteCodeOpCodes[instruction.OpCode].Execute(state);
+                if (state.Returned)
+                {
+                    break;
+                }
+
+                instructionPointer = state.InstructionPointer;
             }
 
-            if (state.StackCount != 1)
+            if (state.StackCount > 1 || state.StackCount == 0 && !state.Returned)
             {
-                throw new InvalidProgramException("A virtual method must leave exactly one value on the stack.");
+                throw new InvalidProgramException("A virtual method must return with zero or one value on the stack.");
+            }
+
+            if (state.StackCount == 0)
+            {
+                return null;
             }
 
             VirtualMachineValue result = state.Pop();
@@ -97,6 +178,11 @@ namespace MirrorVM
             handlers[(byte)VirtualOpCode.LoadInt64] = new LoadInt64();
             handlers[(byte)VirtualOpCode.LoadSingle] = new LoadSingle();
             handlers[(byte)VirtualOpCode.LoadDouble] = new LoadDouble();
+            handlers[(byte)VirtualOpCode.Nop] = new OpCodes.Nop();
+            handlers[(byte)VirtualOpCode.Ldloc] = new OpCodes.Ldloc();
+            handlers[(byte)VirtualOpCode.Stloc] = new OpCodes.Stloc();
+            handlers[(byte)VirtualOpCode.Ret] = new OpCodes.Ret();
+            handlers[(byte)VirtualOpCode.Ldnull] = new OpCodes.Ldnull();
             handlers[(byte)VirtualOpCode.Add] = new Add();
             handlers[(byte)VirtualOpCode.AddOvf] = new AddOvf();
             handlers[(byte)VirtualOpCode.AddOvfUn] = new AddOvfUn();
@@ -157,7 +243,69 @@ namespace MirrorVM
             handlers[(byte)VirtualOpCode.ConvOvfU8Un] = new OpCodes.ConvOvfU8Un();
             handlers[(byte)VirtualOpCode.ConvOvfIUn] = new OpCodes.ConvOvfIUn();
             handlers[(byte)VirtualOpCode.ConvOvfUUn] = new OpCodes.ConvOvfUUn();
+            handlers[(byte)VirtualOpCode.Br] = new OpCodes.Br();
+            handlers[(byte)VirtualOpCode.Brfalse] = new OpCodes.Brfalse();
+            handlers[(byte)VirtualOpCode.Brtrue] = new OpCodes.Brtrue();
+            handlers[(byte)VirtualOpCode.Beq] = new OpCodes.Beq();
+            handlers[(byte)VirtualOpCode.Bge] = new OpCodes.Bge();
+            handlers[(byte)VirtualOpCode.BgeUn] = new OpCodes.BgeUn();
+            handlers[(byte)VirtualOpCode.Bgt] = new OpCodes.Bgt();
+            handlers[(byte)VirtualOpCode.BgtUn] = new OpCodes.BgtUn();
+            handlers[(byte)VirtualOpCode.Ble] = new OpCodes.Ble();
+            handlers[(byte)VirtualOpCode.BleUn] = new OpCodes.BleUn();
+            handlers[(byte)VirtualOpCode.Blt] = new OpCodes.Blt();
+            handlers[(byte)VirtualOpCode.BltUn] = new OpCodes.BltUn();
+            handlers[(byte)VirtualOpCode.BneUn] = new OpCodes.BneUn();
+            handlers[(byte)VirtualOpCode.Switch] = new OpCodes.Switch();
             return handlers;
+        }
+
+        private static void ValidateBranchTargets(List<VirtualMachineInstruction> instructions)
+        {
+            for (int index = 0; index < instructions.Count; index++)
+            {
+                VirtualMachineInstruction instruction = instructions[index];
+                VirtualOpCode opcode = (VirtualOpCode)instruction.OpCode;
+                if (IsBranch(opcode))
+                {
+                    ValidateTarget(instruction.Operand.AsInt32(), instructions.Count);
+                }
+                else if (opcode == VirtualOpCode.Switch)
+                {
+                    int[] targets = (int[])instruction.Operand.AsObject();
+                    for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+                    {
+                        ValidateTarget(targets[targetIndex], instructions.Count);
+                    }
+                }
+            }
+        }
+
+        private static bool IsBranch(VirtualOpCode opcode)
+        {
+            return opcode >= VirtualOpCode.Br && opcode <= VirtualOpCode.BneUn;
+        }
+
+        private static void ValidateTarget(int target, int instructionCount)
+        {
+            if ((uint)target >= (uint)instructionCount)
+            {
+                throw new InvalidProgramException("A branch target is outside the virtual method.");
+            }
+        }
+
+        private static VirtualMachineValue GetLocalDefault(VirtualMachineLocalKind kind)
+        {
+            switch (kind)
+            {
+                case VirtualMachineLocalKind.Int32: return VirtualMachineValue.FromInt32(0);
+                case VirtualMachineLocalKind.Int64: return VirtualMachineValue.FromInt64(0L);
+                case VirtualMachineLocalKind.NativeInt: return VirtualMachineValue.FromNativeInt(IntPtr.Zero);
+                case VirtualMachineLocalKind.Single: return VirtualMachineValue.FromSingle(0f);
+                case VirtualMachineLocalKind.Double: return VirtualMachineValue.FromDouble(0d);
+                case VirtualMachineLocalKind.Decimal: return VirtualMachineValue.FromObject(default(decimal));
+                default: return VirtualMachineValue.FromObject(null);
+            }
         }
 
         private struct ByteCodeReader
@@ -172,6 +320,7 @@ namespace MirrorVM
             }
 
             internal bool HasRemaining { get { return _instructionPointer < _byteCode.Length; } }
+            internal int Remaining { get { return _byteCode.Length - _instructionPointer; } }
 
             internal byte ReadByte()
             {
@@ -199,6 +348,18 @@ namespace MirrorVM
                 return value;
             }
 
+            internal int ReadUInt16()
+            {
+                if (_instructionPointer > _byteCode.Length - 2)
+                {
+                    throw new InvalidProgramException("The local index is truncated.");
+                }
+
+                int value = _byteCode[_instructionPointer] | (_byteCode[_instructionPointer + 1] << 8);
+                _instructionPointer += 2;
+                return value;
+            }
+
             internal long ReadInt64()
             {
                 int low = ReadInt32();
@@ -209,14 +370,20 @@ namespace MirrorVM
             internal string ReadString()
             {
                 int byteCount = ReadInt32();
-                if (byteCount < 0 || byteCount > _byteCode.Length - _instructionPointer)
+                if (byteCount < 0 || (byteCount & 1) != 0 || byteCount > _byteCode.Length - _instructionPointer)
                 {
                     throw new InvalidProgramException("The Ldstr operand is truncated or has an invalid length.");
                 }
 
-                string value = Encoding.UTF8.GetString(_byteCode, _instructionPointer, byteCount);
+                char[] characters = new char[byteCount / 2];
+                for (int index = 0; index < characters.Length; index++)
+                {
+                    int byteIndex = _instructionPointer + index * 2;
+                    characters[index] = (char)(_byteCode[byteIndex] | (_byteCode[byteIndex + 1] << 8));
+                }
+
                 _instructionPointer += byteCount;
-                return value;
+                return new string(characters);
             }
         }
     }

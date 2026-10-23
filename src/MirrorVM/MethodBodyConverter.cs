@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Collections.Generic;
 using System;
-using System.Text;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 
@@ -70,7 +69,8 @@ namespace MirrorVM.Protector
             Single,
             Double,
             Decimal,
-            String
+            String,
+            Null
         }
 
         public static bool TryConvert(MethodDef method, out byte[] byteCode, out string reason)
@@ -84,20 +84,15 @@ namespace MirrorVM.Protector
                 return false;
             }
 
-            StackValueKind returnKind;
-            if (!TryGetValueKind(method.MethodSig.RetType, out returnKind))
+            bool returnsVoid = method.MethodSig.RetType.ElementType == ElementType.Void;
+            StackValueKind returnKind = default(StackValueKind);
+            if (!returnsVoid && !TryGetValueKind(method.MethodSig.RetType, out returnKind))
             {
                 reason = "has an unsupported return type";
                 return false;
             }
 
             int parameterCount = method.MethodSig.Params.Count;
-            if (parameterCount > 256)
-            {
-                reason = "has more than 256 parameters";
-                return false;
-            }
-
             StackValueKind[] parameterKinds = new StackValueKind[parameterCount];
             for (int index = 0; index < parameterCount; index++)
             {
@@ -109,15 +104,29 @@ namespace MirrorVM.Protector
             }
 
             CilBody body = method.Body;
-            if (body.ExceptionHandlers.Count != 0 || body.Variables.Count != 0)
+            if (body.ExceptionHandlers.Count != 0)
             {
-                reason = "uses locals or exception handlers";
+                reason = "uses exception handlers";
                 return false;
             }
 
+            StackValueKind[] localKinds = new StackValueKind[body.Variables.Count];
+            for (int index = 0; index < localKinds.Length; index++)
+            {
+                if (!TryGetValueKind(body.Variables[index].Type, out localKinds[index]))
+                {
+                    reason = "uses an unsupported local type";
+                    return false;
+                }
+            }
+
+            Dictionary<Instruction, int> instructionIndices = new Dictionary<Instruction, int>();
+            for (int index = 0; index < body.Instructions.Count; index++)
+            {
+                instructionIndices.Add(body.Instructions[index], index);
+            }
+
             List<byte> output = new List<byte>();
-            List<StackValueKind> stack = new List<StackValueKind>();
-            bool returned = false;
 
             for (int index = 0; index < body.Instructions.Count; index++)
             {
@@ -126,6 +135,72 @@ namespace MirrorVM.Protector
 
                 if (code == Code.Nop)
                 {
+                    output.Add((byte)VirtualOpCode.Nop);
+                    continue;
+                }
+
+                if (code == Code.Ldnull)
+                {
+                    output.Add((byte)VirtualOpCode.Ldnull);
+                    continue;
+                }
+
+                VirtualOpCode branchOpcode;
+                if (TryGetBranchOpcode(code, out branchOpcode))
+                {
+                    output.Add((byte)branchOpcode);
+                    Instruction target = instruction.Operand as Instruction;
+                    int targetIndex;
+                    if (target == null || !instructionIndices.TryGetValue(target, out targetIndex))
+                    {
+                        reason = "contains a branch target outside the method";
+                        return false;
+                    }
+
+                    AddInt32(output, targetIndex);
+                    continue;
+                }
+
+                if (code == Code.Switch)
+                {
+                    Instruction[] targets = instruction.Operand as Instruction[];
+                    if (targets == null)
+                    {
+                        reason = "contains an invalid switch target table";
+                        return false;
+                    }
+
+                    output.Add((byte)VirtualOpCode.Switch);
+                    AddInt32(output, targets.Length);
+                    for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+                    {
+                        int mappedIndex;
+                        if (targets[targetIndex] == null ||
+                            !instructionIndices.TryGetValue(targets[targetIndex], out mappedIndex))
+                        {
+                            reason = "contains a switch target outside the method";
+                            return false;
+                        }
+
+                        AddInt32(output, mappedIndex);
+                    }
+
+                    continue;
+                }
+
+                bool storeLocal;
+                int localIndex;
+                if (TryGetLocalIndex(instruction, out storeLocal, out localIndex))
+                {
+                    if (localIndex < 0 || localIndex >= localKinds.Length || localIndex > ushort.MaxValue)
+                    {
+                        reason = "references a local outside the bytecode range";
+                        return false;
+                    }
+
+                    output.Add((byte)(storeLocal ? VirtualOpCode.Stloc : VirtualOpCode.Ldloc));
+                    AddUInt16(output, localIndex);
+                    output.Add((byte)localKinds[localIndex]);
                     continue;
                 }
 
@@ -139,8 +214,7 @@ namespace MirrorVM.Protector
                     }
 
                     output.Add((byte)VirtualOpCode.LoadArgument);
-                    output.Add((byte)argumentIndex);
-                    stack.Add(parameterKinds[argumentIndex]);
+                    AddUInt16(output, argumentIndex);
                     continue;
                 }
 
@@ -149,7 +223,6 @@ namespace MirrorVM.Protector
                 {
                     output.Add((byte)VirtualOpCode.LoadInt32);
                     AddInt32(output, constant);
-                    stack.Add(StackValueKind.Int32);
                     continue;
                 }
 
@@ -158,7 +231,6 @@ namespace MirrorVM.Protector
                 {
                     output.Add((byte)VirtualOpCode.LoadInt64);
                     AddInt64(output, longConstant);
-                    stack.Add(StackValueKind.Int64);
                     continue;
                 }
 
@@ -167,7 +239,6 @@ namespace MirrorVM.Protector
                 {
                     output.Add((byte)VirtualOpCode.LoadSingle);
                     AddSingle(output, singleConstant);
-                    stack.Add(StackValueKind.Single);
                     continue;
                 }
 
@@ -176,7 +247,6 @@ namespace MirrorVM.Protector
                 {
                     output.Add((byte)VirtualOpCode.LoadDouble);
                     AddDouble(output, doubleConstant);
-                    stack.Add(StackValueKind.Double);
                     continue;
                 }
 
@@ -189,22 +259,19 @@ namespace MirrorVM.Protector
                         return false;
                     }
 
-                    byte[] utf8 = Encoding.UTF8.GetBytes(value);
                     output.Add((byte)VirtualOpCode.Ldstr);
-                    AddInt32(output, utf8.Length);
-                    output.AddRange(utf8);
-                    stack.Add(StackValueKind.String);
+                    AddInt32(output, value.Length * 2);
+                    for (int characterIndex = 0; characterIndex < value.Length; characterIndex++)
+                    {
+                        char character = value[characterIndex];
+                        output.Add((byte)character);
+                        output.Add((byte)(character >> 8));
+                    }
                     continue;
                 }
 
                 if (code == Code.Ckfinite)
                 {
-                    if (stack.Count == 0 || !IsFloatingPoint(stack[stack.Count - 1]))
-                    {
-                        reason = "uses ckfinite with a non-floating stack value";
-                        return false;
-                    }
-
                     output.Add((byte)VirtualOpCode.Ckfinite);
                     continue;
                 }
@@ -212,69 +279,20 @@ namespace MirrorVM.Protector
                 VirtualOpCode conversion;
                 if (ConversionOpCodes.TryGetValue(code, out conversion))
                 {
-                    if (stack.Count == 0 || !IsNumeric(stack[stack.Count - 1]))
-                    {
-                        reason = "uses a numeric conversion with a non-numeric stack value";
-                        return false;
-                    }
-
                     output.Add((byte)conversion);
-                    stack[stack.Count - 1] = GetConversionResultKind(conversion);
                     continue;
                 }
 
                 VirtualOpCode virtualOpCode;
                 if (NumericOpCodes.TryGetValue(code, out virtualOpCode))
                 {
-                    bool unary = virtualOpCode == VirtualOpCode.Neg || virtualOpCode == VirtualOpCode.Not;
-                    int requiredDepth = unary ? 1 : 2;
-                    if (stack.Count < requiredDepth)
-                    {
-                        reason = "has an arithmetic stack underflow";
-                        return false;
-                    }
-
-                    StackValueKind resultKind;
-                    if (!TryGetNumericResultKind(
-                        virtualOpCode,
-                        stack[stack.Count - 1],
-                        unary ? stack[stack.Count - 1] : stack[stack.Count - 2],
-                        out resultKind))
-                    {
-                        reason = "uses arithmetic with incompatible CIL stack kinds";
-                        return false;
-                    }
-
                     output.Add((byte)virtualOpCode);
-                    if (!unary)
-                    {
-                        stack.RemoveAt(stack.Count - 1);
-                        stack.RemoveAt(stack.Count - 1);
-                        stack.Add(resultKind);
-                    }
-                    else
-                    {
-                        stack[stack.Count - 1] = resultKind;
-                    }
-
                     continue;
                 }
 
                 if (code == Code.Ret)
                 {
-                    if (index != body.Instructions.Count - 1)
-                    {
-                        reason = "has instructions after its return";
-                        return false;
-                    }
-
-                    if (stack.Count != 1 || !AreStackKindsCompatible(stack[0], returnKind))
-                    {
-                        reason = "does not return one value matching its declared type";
-                        return false;
-                    }
-
-                    returned = true;
+                    output.Add((byte)VirtualOpCode.Ret);
                     continue;
                 }
 
@@ -282,13 +300,433 @@ namespace MirrorVM.Protector
                 return false;
             }
 
-            if (!returned)
+            if (!ValidateControlFlow(body, parameterKinds, localKinds, returnKind, returnsVoid, instructionIndices, out reason))
             {
-                reason = "has no final return instruction";
                 return false;
             }
 
             byteCode = output.ToArray();
+            return true;
+        }
+
+        private static bool ValidateControlFlow(
+            CilBody body,
+            StackValueKind[] parameterKinds,
+            StackValueKind[] localKinds,
+            StackValueKind returnKind,
+            bool returnsVoid,
+            Dictionary<Instruction, int> instructionIndices,
+            out string reason)
+        {
+            reason = null;
+            int instructionCount = body.Instructions.Count;
+            if (instructionCount == 0)
+            {
+                reason = "has an empty method body";
+                return false;
+            }
+
+            List<StackValueKind>[] stacks = new List<StackValueKind>[instructionCount];
+            bool[][] assignedLocals = new bool[instructionCount][];
+            Queue<int> pending = new Queue<int>();
+            stacks[0] = new List<StackValueKind>();
+            assignedLocals[0] = new bool[localKinds.Length];
+            if (body.InitLocals)
+            {
+                for (int index = 0; index < localKinds.Length; index++)
+                {
+                    assignedLocals[0][index] = true;
+                }
+            }
+
+            pending.Enqueue(0);
+            int maximumDepth = 0;
+            while (pending.Count != 0)
+            {
+                int index = pending.Dequeue();
+                Instruction instruction = body.Instructions[index];
+                Code code = instruction.OpCode.Code;
+                List<StackValueKind> stack = new List<StackValueKind>(stacks[index]);
+                bool[] assigned = (bool[])assignedLocals[index].Clone();
+                if (!ApplyStackEffect(
+                    instruction,
+                    parameterKinds,
+                    localKinds,
+                    returnKind,
+                    returnsVoid,
+                    stack,
+                    assigned,
+                    body.InitLocals,
+                    out reason))
+                {
+                    return false;
+                }
+
+                maximumDepth = Math.Max(maximumDepth, stack.Count);
+                VirtualOpCode branchOpcode;
+                bool isBranch = TryGetBranchOpcode(code, out branchOpcode);
+                if (code == Code.Ret)
+                {
+                    continue;
+                }
+
+                if (isBranch)
+                {
+                    int target = instructionIndices[(Instruction)instruction.Operand];
+                    if (!MergeFlowState(target, stack, assigned, stacks, assignedLocals, pending, out reason))
+                    {
+                        return false;
+                    }
+
+                    if (branchOpcode == VirtualOpCode.Br)
+                    {
+                        continue;
+                    }
+                }
+                else if (code == Code.Switch)
+                {
+                    Instruction[] targets = (Instruction[])instruction.Operand;
+                    for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
+                    {
+                        if (!MergeFlowState(
+                            instructionIndices[targets[targetIndex]],
+                            stack,
+                            assigned,
+                            stacks,
+                            assignedLocals,
+                            pending,
+                            out reason))
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (index + 1 == instructionCount)
+                {
+                    reason = "has a reachable path that falls through the end of the method";
+                    return false;
+                }
+
+                if (!MergeFlowState(index + 1, stack, assigned, stacks, assignedLocals, pending, out reason))
+                {
+                    return false;
+                }
+            }
+
+            if (maximumDepth > body.MaxStack)
+            {
+                reason = "exceeds its declared CIL maxstack";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool ApplyStackEffect(
+            Instruction instruction,
+            StackValueKind[] parameterKinds,
+            StackValueKind[] localKinds,
+            StackValueKind returnKind,
+            bool returnsVoid,
+            List<StackValueKind> stack,
+            bool[] assigned,
+            bool initLocals,
+            out string reason)
+        {
+            reason = null;
+            int argumentIndex;
+            if (TryGetArgumentIndex(instruction, out argumentIndex))
+            {
+                if (argumentIndex < 0 || argumentIndex >= parameterKinds.Length)
+                {
+                    reason = "references an argument outside the bytecode range";
+                    return false;
+                }
+
+                stack.Add(parameterKinds[argumentIndex]);
+                return true;
+            }
+
+            int constant;
+            if (TryGetInt32Constant(instruction, out constant))
+            {
+                stack.Add(StackValueKind.Int32);
+                return true;
+            }
+
+            long longConstant;
+            if (TryGetInt64Constant(instruction, out longConstant))
+            {
+                stack.Add(StackValueKind.Int64);
+                return true;
+            }
+
+            float singleConstant;
+            if (TryGetSingleConstant(instruction, out singleConstant))
+            {
+                stack.Add(StackValueKind.Single);
+                return true;
+            }
+
+            double doubleConstant;
+            if (TryGetDoubleConstant(instruction, out doubleConstant))
+            {
+                stack.Add(StackValueKind.Double);
+                return true;
+            }
+
+            Code code = instruction.OpCode.Code;
+            if (code == Code.Ldstr)
+            {
+                stack.Add(StackValueKind.String);
+                return true;
+            }
+
+            if (code == Code.Ldnull)
+            {
+                stack.Add(StackValueKind.Null);
+                return true;
+            }
+
+            if (code == Code.Nop)
+            {
+                return true;
+            }
+
+            bool storeLocal;
+            int localIndex;
+            if (TryGetLocalIndex(instruction, out storeLocal, out localIndex))
+            {
+                if (storeLocal)
+                {
+                    if (stack.Count == 0 || !AreStackKindsCompatible(stack[stack.Count - 1], localKinds[localIndex]))
+                    {
+                        reason = "stores a value with an incompatible local kind";
+                        return false;
+                    }
+
+                    stack.RemoveAt(stack.Count - 1);
+                    assigned[localIndex] = true;
+                    return true;
+                }
+
+                if (!initLocals && !assigned[localIndex])
+                {
+                    reason = "reads a local before it is assigned";
+                    return false;
+                }
+
+                stack.Add(localKinds[localIndex]);
+                return true;
+            }
+
+            if (code == Code.Ckfinite)
+            {
+                if (stack.Count == 0 || !IsFloatingPoint(stack[stack.Count - 1]))
+                {
+                    reason = "uses ckfinite with a non-floating stack value";
+                    return false;
+                }
+
+                return true;
+            }
+
+            VirtualOpCode conversion;
+            if (ConversionOpCodes.TryGetValue(code, out conversion))
+            {
+                if (stack.Count == 0 || !IsNumeric(stack[stack.Count - 1]))
+                {
+                    reason = "uses a numeric conversion with a non-numeric stack value";
+                    return false;
+                }
+
+                stack[stack.Count - 1] = GetConversionResultKind(conversion);
+                return true;
+            }
+
+            VirtualOpCode virtualOpCode;
+            if (NumericOpCodes.TryGetValue(code, out virtualOpCode))
+            {
+                bool unary = virtualOpCode == VirtualOpCode.Neg || virtualOpCode == VirtualOpCode.Not;
+                int requiredDepth = unary ? 1 : 2;
+                if (stack.Count < requiredDepth)
+                {
+                    reason = "has an evaluation stack underflow";
+                    return false;
+                }
+
+                StackValueKind resultKind;
+                if (!TryGetNumericResultKind(
+                    virtualOpCode,
+                    stack[stack.Count - 1],
+                    unary ? stack[stack.Count - 1] : stack[stack.Count - 2],
+                    out resultKind))
+                {
+                    reason = "uses an opcode with incompatible CIL stack kinds";
+                    return false;
+                }
+
+                if (unary)
+                {
+                    stack[stack.Count - 1] = resultKind;
+                }
+                else
+                {
+                    stack.RemoveAt(stack.Count - 1);
+                    stack.RemoveAt(stack.Count - 1);
+                    stack.Add(resultKind);
+                }
+
+                return true;
+            }
+
+            VirtualOpCode branch;
+            if (TryGetBranchOpcode(code, out branch))
+            {
+                if (branch == VirtualOpCode.Br)
+                {
+                    return true;
+                }
+
+                int requiredDepth = branch == VirtualOpCode.Brtrue || branch == VirtualOpCode.Brfalse ? 1 : 2;
+                if (stack.Count < requiredDepth)
+                {
+                    reason = "has a branch evaluation stack underflow";
+                    return false;
+                }
+
+                if (requiredDepth == 1)
+                {
+                    StackValueKind value = stack[stack.Count - 1];
+                    if (!IsInteger(value) && value != StackValueKind.String && value != StackValueKind.Null)
+                    {
+                        reason = "branches on an unsupported CIL stack kind";
+                        return false;
+                    }
+
+                    stack.RemoveAt(stack.Count - 1);
+                    return true;
+                }
+
+                StackValueKind right = stack[stack.Count - 1];
+                StackValueKind left = stack[stack.Count - 2];
+                bool referenceEquality = (branch == VirtualOpCode.Beq || branch == VirtualOpCode.BneUn) &&
+                    IsReference(left) && IsReference(right);
+                bool compatible = branch == VirtualOpCode.Beq || branch == VirtualOpCode.BneUn
+                    ? referenceEquality || AreCompatibleNumericKinds(left, right)
+                    : AreCompatibleNumericKinds(left, right);
+                if (!compatible)
+                {
+                    reason = "compares incompatible CIL stack kinds in a branch";
+                    return false;
+                }
+
+                stack.RemoveAt(stack.Count - 1);
+                stack.RemoveAt(stack.Count - 1);
+                return true;
+            }
+
+            if (code == Code.Switch)
+            {
+                if (stack.Count == 0 || stack[stack.Count - 1] != StackValueKind.Int32)
+                {
+                    reason = "uses switch with a non-Int32 selector";
+                    return false;
+                }
+
+                stack.RemoveAt(stack.Count - 1);
+                return true;
+            }
+
+            if (code == Code.Ret)
+            {
+                if (returnsVoid ? stack.Count != 0 :
+                    stack.Count != 1 || !AreStackKindsCompatible(stack[0], returnKind))
+                {
+                    reason = returnsVoid
+                        ? "returns with a non-empty evaluation stack"
+                        : "does not return one value matching its declared type";
+                    return false;
+                }
+
+                return true;
+            }
+
+            reason = "contains an unsupported CIL opcode '" + instruction.OpCode.Name + "'";
+            return false;
+        }
+
+        private static bool MergeFlowState(
+            int target,
+            List<StackValueKind> incomingStack,
+            bool[] incomingLocals,
+            List<StackValueKind>[] stacks,
+            bool[][] assignedLocals,
+            Queue<int> pending,
+            out string reason)
+        {
+            reason = null;
+            if (stacks[target] == null)
+            {
+                stacks[target] = new List<StackValueKind>(incomingStack);
+                assignedLocals[target] = (bool[])incomingLocals.Clone();
+                pending.Enqueue(target);
+                return true;
+            }
+
+            List<StackValueKind> current = stacks[target];
+            if (current.Count != incomingStack.Count)
+            {
+                reason = "has incompatible stack heights at a control-flow merge";
+                return false;
+            }
+
+            bool changed = false;
+            for (int index = 0; index < current.Count; index++)
+            {
+                if (current[index] == incomingStack[index])
+                {
+                    continue;
+                }
+
+                if (IsFloatingPoint(current[index]) && IsFloatingPoint(incomingStack[index]))
+                {
+                    if (current[index] != StackValueKind.Double)
+                    {
+                        current[index] = StackValueKind.Double;
+                        changed = true;
+                    }
+                }
+                else if (IsReference(current[index]) && IsReference(incomingStack[index]))
+                {
+                    if (current[index] == StackValueKind.Null)
+                    {
+                        current[index] = incomingStack[index];
+                        changed = true;
+                    }
+                }
+                else
+                {
+                    reason = "has incompatible stack kinds at a control-flow merge";
+                    return false;
+                }
+            }
+
+            for (int index = 0; index < incomingLocals.Length; index++)
+            {
+                if (assignedLocals[target][index] && !incomingLocals[index])
+                {
+                    assignedLocals[target][index] = false;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                pending.Enqueue(target);
+            }
+
             return true;
         }
 
@@ -370,6 +808,12 @@ namespace MirrorVM.Protector
 
             bool comparison = opcode == VirtualOpCode.Ceq || opcode == VirtualOpCode.Cgt ||
                 opcode == VirtualOpCode.CgtUn || opcode == VirtualOpCode.Clt || opcode == VirtualOpCode.CltUn;
+            if (opcode == VirtualOpCode.Ceq && IsReference(left) && IsReference(right))
+            {
+                result = StackValueKind.Int32;
+                return true;
+            }
+
             if (comparison && AreCompatibleNumericKinds(left, right))
             {
                 result = StackValueKind.Int32;
@@ -421,6 +865,11 @@ namespace MirrorVM.Protector
             return IsFloatingPoint(left) && IsFloatingPoint(right);
         }
 
+        private static bool IsReference(StackValueKind kind)
+        {
+            return kind == StackValueKind.String || kind == StackValueKind.Null;
+        }
+
         private static StackValueKind GetConversionResultKind(VirtualOpCode opcode)
         {
             switch (opcode)
@@ -470,7 +919,8 @@ namespace MirrorVM.Protector
 
         private static bool AreStackKindsCompatible(StackValueKind actual, StackValueKind expected)
         {
-            return actual == expected || (IsFloatingPoint(actual) && IsFloatingPoint(expected));
+            return actual == expected || (IsFloatingPoint(actual) && IsFloatingPoint(expected)) ||
+                actual == StackValueKind.Null && expected == StackValueKind.String;
         }
 
         private static bool TryGetArgumentIndex(Instruction instruction, out int index)
@@ -494,6 +944,56 @@ namespace MirrorVM.Protector
 
             index = -1;
             return false;
+        }
+
+        private static bool TryGetLocalIndex(Instruction instruction, out bool store, out int index)
+        {
+            store = false;
+            switch (instruction.OpCode.Code)
+            {
+                case Code.Ldloc_0: index = 0; return true;
+                case Code.Ldloc_1: index = 1; return true;
+                case Code.Ldloc_2: index = 2; return true;
+                case Code.Ldloc_3: index = 3; return true;
+                case Code.Ldloc:
+                case Code.Ldloc_S:
+                    Local load = instruction.Operand as Local;
+                    if (load != null) { index = load.Index; return true; }
+                    break;
+                case Code.Stloc_0: store = true; index = 0; return true;
+                case Code.Stloc_1: store = true; index = 1; return true;
+                case Code.Stloc_2: store = true; index = 2; return true;
+                case Code.Stloc_3: store = true; index = 3; return true;
+                case Code.Stloc:
+                case Code.Stloc_S:
+                    Local stored = instruction.Operand as Local;
+                    if (stored != null) { store = true; index = stored.Index; return true; }
+                    break;
+            }
+
+            index = -1;
+            return false;
+        }
+
+        private static bool TryGetBranchOpcode(Code code, out VirtualOpCode opcode)
+        {
+            switch (code)
+            {
+                case Code.Br: case Code.Br_S: opcode = VirtualOpCode.Br; return true;
+                case Code.Brfalse: case Code.Brfalse_S: opcode = VirtualOpCode.Brfalse; return true;
+                case Code.Brtrue: case Code.Brtrue_S: opcode = VirtualOpCode.Brtrue; return true;
+                case Code.Beq: case Code.Beq_S: opcode = VirtualOpCode.Beq; return true;
+                case Code.Bge: case Code.Bge_S: opcode = VirtualOpCode.Bge; return true;
+                case Code.Bge_Un: case Code.Bge_Un_S: opcode = VirtualOpCode.BgeUn; return true;
+                case Code.Bgt: case Code.Bgt_S: opcode = VirtualOpCode.Bgt; return true;
+                case Code.Bgt_Un: case Code.Bgt_Un_S: opcode = VirtualOpCode.BgtUn; return true;
+                case Code.Ble: case Code.Ble_S: opcode = VirtualOpCode.Ble; return true;
+                case Code.Ble_Un: case Code.Ble_Un_S: opcode = VirtualOpCode.BleUn; return true;
+                case Code.Blt: case Code.Blt_S: opcode = VirtualOpCode.Blt; return true;
+                case Code.Blt_Un: case Code.Blt_Un_S: opcode = VirtualOpCode.BltUn; return true;
+                case Code.Bne_Un: case Code.Bne_Un_S: opcode = VirtualOpCode.BneUn; return true;
+                default: opcode = default(VirtualOpCode); return false;
+            }
         }
 
         private static bool TryGetInt32Constant(Instruction instruction, out int value)
@@ -575,6 +1075,12 @@ namespace MirrorVM.Protector
                 output.Add((byte)(value >> 16));
                 output.Add((byte)(value >> 24));
             }
+        }
+
+        private static void AddUInt16(List<byte> output, int value)
+        {
+            output.Add((byte)value);
+            output.Add((byte)(value >> 8));
         }
 
         private static void AddInt64(List<byte> output, long value)

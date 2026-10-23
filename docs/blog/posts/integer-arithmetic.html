@@ -57,24 +57,24 @@
 }</code></pre>
 
         <p>For <code>Add</code>, the converter reads the CIL argument loads and <code>add</code>, then emits:</p>
-        <pre><code>01 00    LoadArgument 0
-01 01    LoadArgument 1
+        <pre><code>01 00 00    LoadArgument 0
+01 01 00    LoadArgument 1
 10       Add</code></pre>
-        <p><code>LoadArgument</code> uses opcode ID <code>0x01</code> followed by a one-byte argument index. Each load pushes that argument. <code>Add</code> has ID <code>0x10</code>, pops right then left, calculates <code>left + right</code>, and pushes one result. The CIL <code>ret</code> is consumed by the converter; compilation ends when the byte sequence ends, and execution walks the decoded instruction array.</p>
+        <p><code>LoadArgument</code> uses opcode ID <code>0x01</code> followed by a two-byte little-endian unsigned CIL argument index. Each load pushes that argument. <code>Add</code> has ID <code>0x10</code>, pops right then left, calculates <code>left + right</code>, and pushes one result. The CIL <code>ret</code> is consumed by the converter; compilation ends when the byte sequence ends, and execution walks the decoded instruction array.</p>
 
         <p><code>Subtract</code> changes the last byte to <code>0x13</code> (<code>Sub</code>). The three-argument method becomes:</p>
-        <pre><code>01 00    LoadArgument 0
-01 01    LoadArgument 1
+        <pre><code>01 00 00    LoadArgument 0
+01 01 00    LoadArgument 1
 10       Add
-01 02    LoadArgument 2
+01 02 00    LoadArgument 2
 13       Sub</code></pre>
         <p>For <code>(40 + 4) - 2</code>, the stack evolves as <code>[40]</code>, <code>[40, 4]</code>, <code>[44]</code>, <code>[44, 2]</code>, then <code>[42]</code>. Each arithmetic handler leaves its own output on that same stack.</p>
 
         <h2>String values use the same return path</h2>
-        <p><code>MyString</code> compiles to CIL <code>ldstr "Test"</code> followed by <code>ret</code>. The converter stores UTF-8 as a four-byte little-endian byte count followed by those bytes:</p>
-        <pre><code>03                Ldstr opcode ID
-04 00 00 00       UTF-8 byte count: 4
-54 65 73 74       UTF-8 bytes: "Test"</code></pre>
+        <p><code>MyString</code> compiles to CIL <code>ldstr "Test"</code> followed by <code>ret</code>. The converter stores each UTF-16 code unit in little-endian order, preceded by a four-byte little-endian byte count. This preserves unpaired surrogate code units too:</p>
+        <pre><code>03                         Ldstr opcode ID
+08 00 00 00                UTF-16 byte count: 8
+54 00 65 00 73 00 74 00    UTF-16 code units: "Test"</code></pre>
         <p><code>Ldstr</code> pushes the decoded string. <code>VirtualMachine.Execute(VirtualMachineProgram, object[])</code> returns the one value left on the stack as <code>object</code>. A rewritten <code>string</code> method casts that object back to <code>string</code>; an <code>Int32</code> or <code>UInt32</code> method unboxes the I4 result. This is one runtime entrypoint for all supported result types.</p>
 
         <h2>Arithmetic names and behavior</h2>
@@ -93,7 +93,8 @@
           </table>
         </div>
         <p>The VM normalizes small signed and unsigned integers to I4, 64-bit integers to I8, native integers to the process pointer width, and floating-point values to their CIL stack kinds. The opcode selects signed or unsigned behavior. The implementation includes checked arithmetic, bitwise operations, shifts, comparisons, finite checks, and the full mapped <code>conv.*</code> family, including checked unsigned-source forms.</p>
-        <p>The protected sample exercises numeric signatures, constants, arithmetic, conversions, and typed returns. Its CLR differential checks compare each implemented numeric opcode with a generated CLR method on each of the 26 matrix entries in both x86 and x64 processes. <code>Decimal</code> passes through by value, but decimal arithmetic compiles to method calls and remains unsupported. This is the verified numeric subset, not complete CLR numeric emulation.</p>
+        <p>The protected sample exercises numeric signatures, constants, arithmetic, conversions, and typed returns. Its CLR differential checks compare each implemented numeric opcode with a generated CLR method on each of the 26 matrix entries in both x86 and x64 processes. The tests cover signed and unsigned source-width endpoints, checked and unchecked overflow, division and remainder overflow and zero divisors, remainder signs, shift counts around and beyond integer widths, and conversion fractions near target boundaries. Floating tests include signed zero, least subnormals, finite extrema, infinities, and NaN. These are targeted cross-products, not every possible operand pair. <code>Decimal</code> passes through by value, but decimal arithmetic compiles to method calls and remains unsupported. This is the verified numeric subset, not complete CLR numeric emulation.</p>
+        <p>The matrix also checks the expression <code>16777216f + 1f - 16777216f</code>. On x86 .NET Framework, the CLR returns <code>1</code> because floating values retain wider intermediate precision on the evaluation stack. MirrorVM uses <code>Double</code> intermediates for <code>Single</code> arithmetic on this runtime and rounds at local stores and returns. The same numeric suite probes out-of-width shifts on x86; MirrorVM follows the observed CIL behavior on Framework and .NET Core 2.0, including the legacy 32-bit JIT case. The precision and shift checks are differential comparisons with generated CLR methods.</p>
 
         <h2>How the helper compares with HexVM's NumericHelper</h2>
         <p>MirrorVM's <code>NumericArithmetic</code> is a focused helper for the current opcode subset. It is not a copy or drop-in replacement for HexVM's <code>NumericHelper</code>. Its present value kinds are I4, I8, native integers, <code>Single</code>, and <code>Double</code>, with small integer and enum normalization at the VM boundary. Decimal is passed through but its operators are not implemented here.</p>
@@ -104,7 +105,7 @@
 
         <div class="fact-box">
           <strong>Verified numeric scope</strong>
-          <p>The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes. All 17 unit tests pass on the .NET 9 x64 host. Framework 4.x runs used the installed 4.8.1 in-place CLR.</p>
+          <p>The protected sample matched its original CLR output on all 26 configured matrix entries in x86 and x64 processes. All 25 unit tests pass on the .NET 9 x64 host. Framework 4.x runs used the installed 4.8.1 in-place CLR.</p>
         </div>
 
         <p>Stable opcode IDs and visible stack effects make the execution path straightforward to inspect and emulate. That supports reverse engineering and defensive research. It is not a guarantee that every downstream use is benign.</p>
@@ -122,7 +123,7 @@
     <aside class="article-aside">
       <div class="aside-card">
         <p class="eyebrow">At a glance</p>
-        <p>VM stack: one VirtualMachineValue[]<br>Execution: decoded bytecode → indexed handlers<br>Numeric families: arithmetic, conversions, bitwise, shifts, comparisons<br>Matrix: 26 entries passed<br>Unit tests: 17 on .NET 9</p>
+        <p>VM stack: one VirtualMachineValue[]<br>Execution: decoded bytecode → indexed handlers<br>Numeric families: arithmetic, conversions, bitwise, shifts, comparisons<br>Matrix: 26 entries passed<br>Unit tests: 25 on .NET 9</p>
       </div>
     </aside>
   </main>

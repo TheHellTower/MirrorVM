@@ -45,6 +45,12 @@ namespace MirrorVM.Sample
             CheckConversions();
             CheckBitwiseAndComparisons();
             CheckUnary();
+            CheckSinglePrecisionStack();
+            CheckUncheckedArithmeticEdges();
+            CheckCheckedArithmeticEdges();
+            CheckDivisionAndRemainderEdges();
+            CheckShiftCounts();
+            CheckFloatingPointEdges();
         }
 
         private static void CheckArithmetic()
@@ -102,29 +108,288 @@ namespace MirrorVM.Sample
             Check(VirtualOpCode.AddOvf, new[] { typeof(int), typeof(int) }, new object[] { int.MaxValue, 1 }, typeof(int));
             Check(VirtualOpCode.AddOvfUn, new[] { typeof(uint), typeof(uint) }, new object[] { uint.MaxValue, 1U }, typeof(uint));
             Check(VirtualOpCode.SubOvf, new[] { typeof(long), typeof(long) }, new object[] { long.MinValue, 1L }, typeof(long));
+            Check(VirtualOpCode.SubOvfUn, new[] { typeof(uint), typeof(uint) }, new object[] { 0U, 1U }, typeof(uint));
+            Check(VirtualOpCode.MulOvf, new[] { typeof(int), typeof(int) }, new object[] { int.MaxValue, 2 }, typeof(int));
             Check(VirtualOpCode.MulOvfUn, new[] { typeof(ulong), typeof(ulong) }, new object[] { ulong.MaxValue, 2UL }, typeof(ulong));
+        }
+
+        private static void CheckCheckedArithmeticEdges()
+        {
+            object[][] cases =
+            {
+                new object[] { VirtualOpCode.AddOvf, typeof(int), int.MaxValue, 1, typeof(int) },
+                new object[] { VirtualOpCode.AddOvf, typeof(int), int.MinValue, -1, typeof(int) },
+                new object[] { VirtualOpCode.AddOvf, typeof(long), long.MaxValue, 1L, typeof(long) },
+                new object[] { VirtualOpCode.AddOvf, typeof(long), long.MinValue, -1L, typeof(long) },
+                new object[] { VirtualOpCode.AddOvf, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MaxValue) : new IntPtr(long.MaxValue), new IntPtr(1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.AddOvfUn, typeof(uint), uint.MaxValue, 1U, typeof(uint) },
+                new object[] { VirtualOpCode.AddOvfUn, typeof(ulong), ulong.MaxValue, 1UL, typeof(ulong) },
+                new object[] { VirtualOpCode.AddOvfUn, typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue), new UIntPtr(1U), typeof(UIntPtr) },
+                new object[] { VirtualOpCode.AddOvfUn, typeof(IntPtr), new IntPtr(-1), new IntPtr(1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.SubOvf, typeof(int), int.MinValue, 1, typeof(int) },
+                new object[] { VirtualOpCode.SubOvf, typeof(int), int.MaxValue, -1, typeof(int) },
+                new object[] { VirtualOpCode.SubOvf, typeof(long), long.MinValue, 1L, typeof(long) },
+                new object[] { VirtualOpCode.SubOvf, typeof(long), long.MaxValue, -1L, typeof(long) },
+                new object[] { VirtualOpCode.SubOvf, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MinValue) : new IntPtr(long.MinValue), new IntPtr(1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.SubOvfUn, typeof(uint), 0U, 1U, typeof(uint) },
+                new object[] { VirtualOpCode.SubOvfUn, typeof(ulong), 0UL, 1UL, typeof(ulong) },
+                new object[] { VirtualOpCode.SubOvfUn, typeof(UIntPtr), new UIntPtr(0U), new UIntPtr(1U), typeof(UIntPtr) },
+                new object[] { VirtualOpCode.MulOvf, typeof(int), int.MaxValue, 2, typeof(int) },
+                new object[] { VirtualOpCode.MulOvf, typeof(int), int.MinValue, -1, typeof(int) },
+                new object[] { VirtualOpCode.MulOvf, typeof(long), long.MaxValue, 2L, typeof(long) },
+                new object[] { VirtualOpCode.MulOvf, typeof(long), long.MinValue, -1L, typeof(long) },
+                new object[] { VirtualOpCode.MulOvf, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MinValue) : new IntPtr(long.MinValue), new IntPtr(-1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.MulOvfUn, typeof(uint), uint.MaxValue, 2U, typeof(uint) },
+                new object[] { VirtualOpCode.MulOvfUn, typeof(ulong), ulong.MaxValue, 2UL, typeof(ulong) },
+                new object[] { VirtualOpCode.MulOvfUn, typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue), new UIntPtr(2U), typeof(UIntPtr) }
+            };
+
+            foreach (object[] test in cases)
+            {
+                Check((VirtualOpCode)test[0], new[] { (Type)test[1], (Type)test[1] },
+                    new[] { test[2], test[3] }, (Type)test[4]);
+            }
+        }
+
+        private static void CheckUncheckedArithmeticEdges()
+        {
+            object[][] cases =
+            {
+                new object[] { VirtualOpCode.Add, typeof(int), int.MaxValue, 1, typeof(int) },
+                new object[] { VirtualOpCode.Add, typeof(uint), uint.MaxValue, 1U, typeof(uint) },
+                new object[] { VirtualOpCode.Add, typeof(long), long.MaxValue, 1L, typeof(long) },
+                new object[] { VirtualOpCode.Add, typeof(ulong), ulong.MaxValue, 1UL, typeof(ulong) },
+                new object[] { VirtualOpCode.Add, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MaxValue) : new IntPtr(long.MaxValue), new IntPtr(1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.Add, typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue), new UIntPtr(1U), typeof(UIntPtr) },
+                new object[] { VirtualOpCode.Sub, typeof(int), int.MinValue, 1, typeof(int) },
+                new object[] { VirtualOpCode.Sub, typeof(uint), 0U, 1U, typeof(uint) },
+                new object[] { VirtualOpCode.Sub, typeof(long), long.MinValue, 1L, typeof(long) },
+                new object[] { VirtualOpCode.Sub, typeof(ulong), 0UL, 1UL, typeof(ulong) },
+                new object[] { VirtualOpCode.Sub, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MinValue) : new IntPtr(long.MinValue), new IntPtr(1), typeof(IntPtr) },
+                new object[] { VirtualOpCode.Sub, typeof(UIntPtr), new UIntPtr(0U), new UIntPtr(1U), typeof(UIntPtr) },
+                new object[] { VirtualOpCode.Mul, typeof(int), int.MaxValue, 2, typeof(int) },
+                new object[] { VirtualOpCode.Mul, typeof(uint), uint.MaxValue, 2U, typeof(uint) },
+                new object[] { VirtualOpCode.Mul, typeof(long), long.MaxValue, 2L, typeof(long) },
+                new object[] { VirtualOpCode.Mul, typeof(ulong), ulong.MaxValue, 2UL, typeof(ulong) },
+                new object[] { VirtualOpCode.Mul, typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MaxValue) : new IntPtr(long.MaxValue), new IntPtr(2), typeof(IntPtr) },
+                new object[] { VirtualOpCode.Mul, typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue), new UIntPtr(2U), typeof(UIntPtr) }
+            };
+
+            foreach (object[] test in cases)
+            {
+                Check((VirtualOpCode)test[0], new[] { (Type)test[1], (Type)test[1] },
+                    new[] { test[2], test[3] }, (Type)test[4]);
+            }
+        }
+
+        private static void CheckDivisionAndRemainderEdges()
+        {
+            object[][] signed32 =
+            {
+                new object[] { int.MinValue, -1 },
+                new object[] { -7, 3 },
+                new object[] { 7, -3 },
+                new object[] { -7, -3 },
+                new object[] { 5, 0 }
+            };
+            object[][] signed64 =
+            {
+                new object[] { long.MinValue, -1L },
+                new object[] { -7L, 3L },
+                new object[] { 7L, -3L },
+                new object[] { -7L, -3L },
+                new object[] { 5L, 0L }
+            };
+            VirtualOpCode[] signedOperations = { VirtualOpCode.Div, VirtualOpCode.Rem };
+            foreach (VirtualOpCode opcode in signedOperations)
+            {
+                foreach (object[] pair in signed32)
+                    Check(opcode, new[] { typeof(int), typeof(int) }, pair, typeof(int));
+                foreach (object[] pair in signed64)
+                    Check(opcode, new[] { typeof(long), typeof(long) }, pair, typeof(long));
+            }
+
+            Check(VirtualOpCode.DivUn, new[] { typeof(uint), typeof(uint) }, new object[] { uint.MaxValue, 2U }, typeof(uint));
+            Check(VirtualOpCode.DivUn, new[] { typeof(uint), typeof(uint) }, new object[] { 1U, 0U }, typeof(uint));
+            Check(VirtualOpCode.RemUn, new[] { typeof(uint), typeof(uint) }, new object[] { uint.MaxValue, 10U }, typeof(uint));
+            Check(VirtualOpCode.RemUn, new[] { typeof(uint), typeof(uint) }, new object[] { 1U, 0U }, typeof(uint));
+            Check(VirtualOpCode.DivUn, new[] { typeof(ulong), typeof(ulong) }, new object[] { ulong.MaxValue, 2UL }, typeof(ulong));
+            Check(VirtualOpCode.DivUn, new[] { typeof(ulong), typeof(ulong) }, new object[] { 1UL, 0UL }, typeof(ulong));
+            Check(VirtualOpCode.RemUn, new[] { typeof(ulong), typeof(ulong) }, new object[] { ulong.MaxValue, 10UL }, typeof(ulong));
+            Check(VirtualOpCode.RemUn, new[] { typeof(ulong), typeof(ulong) }, new object[] { 1UL, 0UL }, typeof(ulong));
+
+            IntPtr nativeMin = IntPtr.Size == 4 ? new IntPtr(int.MinValue) : new IntPtr(long.MinValue);
+            Check(VirtualOpCode.Div, new[] { typeof(IntPtr), typeof(int) }, new object[] { nativeMin, -1 }, typeof(IntPtr));
+            Check(VirtualOpCode.Rem, new[] { typeof(IntPtr), typeof(int) }, new object[] { nativeMin, -1 }, typeof(IntPtr));
+            Check(VirtualOpCode.Rem, new[] { typeof(IntPtr), typeof(int) }, new object[] { new IntPtr(-7), 3 }, typeof(IntPtr));
+            Check(VirtualOpCode.Div, new[] { typeof(IntPtr), typeof(int) }, new object[] { new IntPtr(1), 0 }, typeof(IntPtr));
+            UIntPtr unsignedNativeMax = IntPtr.Size == 4 ? new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue);
+            Check(VirtualOpCode.DivUn, new[] { typeof(UIntPtr), typeof(UIntPtr) }, new object[] { unsignedNativeMax, new UIntPtr(2U) }, typeof(UIntPtr));
+            Check(VirtualOpCode.RemUn, new[] { typeof(UIntPtr), typeof(UIntPtr) }, new object[] { unsignedNativeMax, new UIntPtr(10U) }, typeof(UIntPtr));
+            Check(VirtualOpCode.DivUn, new[] { typeof(UIntPtr), typeof(UIntPtr) }, new object[] { new UIntPtr(1U), new UIntPtr(0U) }, typeof(UIntPtr));
+            Check(VirtualOpCode.RemUn, new[] { typeof(UIntPtr), typeof(UIntPtr) }, new object[] { new UIntPtr(1U), new UIntPtr(0U) }, typeof(UIntPtr));
+        }
+
+        private static void CheckShiftCounts()
+        {
+            int[] counts = { -65, -64, -63, -33, -32, -31, -1, 0, 1, 31, 32, 33, 63, 64, 65, 95, 96, 127, 128, int.MinValue, int.MaxValue };
+            object[][] values =
+            {
+                new object[] { typeof(int), unchecked((int)0x80000001U) },
+                new object[] { typeof(uint), 0x80000001U },
+                new object[] { typeof(long), unchecked((long)0x8000000000000001UL) },
+                new object[] { typeof(ulong), 0x8000000000000001UL },
+                new object[] { typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(unchecked((int)0x80000001U)) : new IntPtr(unchecked((long)0x8000000000000001UL)) },
+                new object[] { typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(0x80000001U) : new UIntPtr(0x8000000000000001UL) }
+            };
+            VirtualOpCode[] operations = { VirtualOpCode.Shl, VirtualOpCode.Shr, VirtualOpCode.ShrUn };
+
+            foreach (VirtualOpCode opcode in operations)
+            {
+                foreach (object[] value in values)
+                {
+                    foreach (int count in counts)
+                    {
+                        Check(opcode, new[] { (Type)value[0], typeof(int) },
+                            new object[] { value[1], count }, (Type)value[0]);
+                    }
+                }
+            }
+        }
+
+        private static void CheckFloatingPointEdges()
+        {
+            object[][] values =
+            {
+                new object[] { typeof(float), 0f, -0f },
+                new object[] { typeof(float), -0f, 1f },
+                new object[] { typeof(float), float.Epsilon, 1f },
+                new object[] { typeof(float), float.Epsilon, 0.5f },
+                new object[] { typeof(float), 1f, 0f },
+                new object[] { typeof(float), -1f, 0f },
+                new object[] { typeof(float), float.MaxValue, float.MaxValue },
+                new object[] { typeof(float), float.PositiveInfinity, 0f },
+                new object[] { typeof(float), float.PositiveInfinity, float.NegativeInfinity },
+                new object[] { typeof(float), float.PositiveInfinity, float.PositiveInfinity },
+                new object[] { typeof(float), float.NaN, 2f },
+                new object[] { typeof(double), 0d, -0d },
+                new object[] { typeof(double), -0d, 1d },
+                new object[] { typeof(double), double.Epsilon, 1d },
+                new object[] { typeof(double), double.Epsilon, 0.5d },
+                new object[] { typeof(double), 1d, 0d },
+                new object[] { typeof(double), -1d, 0d },
+                new object[] { typeof(double), double.MaxValue, double.MaxValue },
+                new object[] { typeof(double), double.PositiveInfinity, 0d },
+                new object[] { typeof(double), double.PositiveInfinity, double.NegativeInfinity },
+                new object[] { typeof(double), double.PositiveInfinity, double.PositiveInfinity },
+                new object[] { typeof(double), double.NaN, 2d }
+            };
+            VirtualOpCode[] operations =
+            {
+                VirtualOpCode.Add, VirtualOpCode.Sub, VirtualOpCode.Mul,
+                VirtualOpCode.Div, VirtualOpCode.Rem
+            };
+
+            foreach (VirtualOpCode opcode in operations)
+            {
+                foreach (object[] pair in values)
+                {
+                    Type type = (Type)pair[0];
+                    Check(opcode, new[] { type, type }, new[] { pair[1], pair[2] }, type);
+                }
+
+                Check(opcode, new[] { typeof(float), typeof(double) },
+                    new object[] { float.Epsilon, double.Epsilon }, typeof(float), true);
+                Check(opcode, new[] { typeof(double), typeof(float) },
+                    new object[] { -0d, 1f }, typeof(double), true);
+            }
         }
 
         private static void CheckConversions()
         {
             object[][] sources =
             {
-                new object[] { typeof(sbyte), (sbyte)-123 },
-                new object[] { typeof(byte), (byte)251 },
-                new object[] { typeof(short), (short)-32000 },
-                new object[] { typeof(ushort), (ushort)65000 },
+                new object[] { typeof(bool), false },
+                new object[] { typeof(bool), true },
+                new object[] { typeof(sbyte), sbyte.MinValue },
+                new object[] { typeof(sbyte), sbyte.MaxValue },
+                new object[] { typeof(byte), (byte)0 },
+                new object[] { typeof(byte), byte.MaxValue },
+                new object[] { typeof(short), short.MinValue },
+                new object[] { typeof(short), short.MaxValue },
+                new object[] { typeof(ushort), (ushort)0 },
+                new object[] { typeof(ushort), ushort.MaxValue },
+                new object[] { typeof(char), '\0' },
                 new object[] { typeof(char), '\uD7FF' },
+                new object[] { typeof(char), '\uFFFF' },
+                new object[] { typeof(int), int.MinValue },
                 new object[] { typeof(int), -1 },
+                new object[] { typeof(int), 0 },
+                new object[] { typeof(int), int.MaxValue },
+                new object[] { typeof(uint), 0U },
                 new object[] { typeof(uint), uint.MaxValue },
+                new object[] { typeof(long), long.MinValue },
                 new object[] { typeof(long), -1L },
+                new object[] { typeof(long), 0L },
+                new object[] { typeof(long), long.MaxValue },
+                new object[] { typeof(ulong), 0UL },
                 new object[] { typeof(ulong), ulong.MaxValue },
-                new object[] { typeof(IntPtr), new IntPtr(-1) },
+                new object[] { typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MinValue) : new IntPtr(long.MinValue) },
+                new object[] { typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MaxValue) : new IntPtr(long.MaxValue) },
+                new object[] { typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(0U) : new UIntPtr(0UL) },
                 new object[] { typeof(UIntPtr), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue) },
+                new object[] { typeof(float), float.Epsilon },
+                new object[] { typeof(float), -0.5f },
+                new object[] { typeof(float), -128.9f },
+                new object[] { typeof(float), 127.9f },
+                new object[] { typeof(float), 128f },
+                new object[] { typeof(float), 255.9f },
+                new object[] { typeof(float), 32767.9f },
+                new object[] { typeof(float), 32768f },
+                new object[] { typeof(float), 65535.9f },
+                new object[] { typeof(float), 65536f },
+                new object[] { typeof(float), 2147483520f },
+                new object[] { typeof(float), 2147483648f },
+                new object[] { typeof(float), 4294967040f },
+                new object[] { typeof(float), 4294967296f },
+                new object[] { typeof(float), (float)Math.Pow(2d, 63d) },
+                new object[] { typeof(float), (float)Math.Pow(2d, 64d) },
                 new object[] { typeof(float), 123.75f },
+                new object[] { typeof(float), float.MaxValue },
+                new object[] { typeof(float), float.PositiveInfinity },
+                new object[] { typeof(float), float.NegativeInfinity },
+                new object[] { typeof(float), float.NaN },
                 new object[] { typeof(double), -123.75d },
+                new object[] { typeof(double), -0.5d },
+                new object[] { typeof(double), -0.999d },
+                new object[] { typeof(double), -128.9d },
+                new object[] { typeof(double), 127.9d },
+                new object[] { typeof(double), 128d },
+                new object[] { typeof(double), 255.9d },
+                new object[] { typeof(double), 256d },
+                new object[] { typeof(double), -32769d },
+                new object[] { typeof(double), 32767.9d },
+                new object[] { typeof(double), 32768d },
+                new object[] { typeof(double), 65535.9d },
+                new object[] { typeof(double), 65536d },
+                new object[] { typeof(double), 2147483647d },
+                new object[] { typeof(double), 2147483648d },
+                new object[] { typeof(double), 4294967295d },
+                new object[] { typeof(double), 4294967296d },
+                new object[] { typeof(double), -Math.Pow(2d, 63d) },
+                new object[] { typeof(double), Math.Pow(2d, 63d) },
+                new object[] { typeof(double), Math.Pow(2d, 64d) - 2048d },
+                new object[] { typeof(double), Math.Pow(2d, 64d) },
+                new object[] { typeof(double), -1d },
+                new object[] { typeof(double), 0d },
+                new object[] { typeof(double), 0.5d },
+                new object[] { typeof(double), 0.999d },
+                new object[] { typeof(double), 1d },
+                new object[] { typeof(double), double.Epsilon },
                 new object[] { typeof(double), double.MaxValue },
                 new object[] { typeof(double), double.NaN },
-                new object[] { typeof(double), double.PositiveInfinity }
+                new object[] { typeof(double), double.PositiveInfinity },
+                new object[] { typeof(double), double.NegativeInfinity }
             };
 
             foreach (VirtualOpCode opcode in Conversions)
@@ -194,6 +459,30 @@ namespace MirrorVM.Sample
                 Check(opcode, new[] { typeof(float), typeof(double) },
                     new object[] { float.NaN, 0d }, typeof(int), true);
             }
+
+            object[][] edges =
+            {
+                new object[] { typeof(int), int.MinValue, int.MaxValue },
+                new object[] { typeof(uint), 1U, uint.MaxValue },
+                new object[] { typeof(long), long.MinValue, long.MaxValue },
+                new object[] { typeof(ulong), 1UL, ulong.MaxValue },
+                new object[] { typeof(IntPtr), IntPtr.Size == 4 ? (object)new IntPtr(int.MinValue) : new IntPtr(long.MinValue), new IntPtr(0) },
+                new object[] { typeof(UIntPtr), new UIntPtr(1U), IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue) },
+                new object[] { typeof(float), -0f, 0f },
+                new object[] { typeof(float), float.NegativeInfinity, float.PositiveInfinity },
+                new object[] { typeof(float), float.NaN, 0f },
+                new object[] { typeof(double), -0d, 0d },
+                new object[] { typeof(double), double.NegativeInfinity, double.PositiveInfinity },
+                new object[] { typeof(double), double.NaN, 0d }
+            };
+            foreach (VirtualOpCode opcode in comparisons)
+            {
+                foreach (object[] edge in edges)
+                {
+                    Type type = (Type)edge[0];
+                    Check(opcode, new[] { type, type }, new[] { edge[1], edge[2] }, typeof(int));
+                }
+            }
         }
 
         private static void CheckUnary()
@@ -207,15 +496,58 @@ namespace MirrorVM.Sample
                 new object[] { IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue) },
                 typeof(UIntPtr));
             Check(VirtualOpCode.Neg, new[] { typeof(float) }, new object[] { -1.5f }, typeof(float));
+            Check(VirtualOpCode.Neg, new[] { typeof(float) }, new object[] { 0f }, typeof(float));
             Check(VirtualOpCode.Neg, new[] { typeof(double) }, new object[] { -1.5d }, typeof(double));
+            Check(VirtualOpCode.Neg, new[] { typeof(double) }, new object[] { 0d }, typeof(double));
             Check(VirtualOpCode.Not, new[] { typeof(int) }, new object[] { -7 }, typeof(int));
+            Check(VirtualOpCode.Not, new[] { typeof(uint) }, new object[] { uint.MaxValue }, typeof(uint));
             Check(VirtualOpCode.Not, new[] { typeof(long) }, new object[] { -7L }, typeof(long));
+            Check(VirtualOpCode.Not, new[] { typeof(ulong) }, new object[] { ulong.MaxValue }, typeof(ulong));
             Check(VirtualOpCode.Not, new[] { typeof(IntPtr) }, new object[] { new IntPtr(-7) }, typeof(IntPtr));
+            Check(VirtualOpCode.Not, new[] { typeof(UIntPtr) },
+                new object[] { IntPtr.Size == 4 ? (object)new UIntPtr(uint.MaxValue) : new UIntPtr(ulong.MaxValue) },
+                typeof(UIntPtr));
             Check(VirtualOpCode.Ckfinite, new[] { typeof(float) }, new object[] { 1.25f }, typeof(float));
             Check(VirtualOpCode.Ckfinite, new[] { typeof(float) }, new object[] { float.PositiveInfinity }, typeof(float));
+            Check(VirtualOpCode.Ckfinite, new[] { typeof(float) }, new object[] { float.NegativeInfinity }, typeof(float));
             Check(VirtualOpCode.Ckfinite, new[] { typeof(float) }, new object[] { float.NaN }, typeof(float));
+            Check(VirtualOpCode.Ckfinite, new[] { typeof(double) }, new object[] { 1.25d }, typeof(double));
             Check(VirtualOpCode.Ckfinite, new[] { typeof(double) }, new object[] { double.PositiveInfinity }, typeof(double));
+            Check(VirtualOpCode.Ckfinite, new[] { typeof(double) }, new object[] { double.NegativeInfinity }, typeof(double));
             Check(VirtualOpCode.Ckfinite, new[] { typeof(double) }, new object[] { double.NaN }, typeof(double));
+        }
+
+        private static void CheckSinglePrecisionStack()
+        {
+            float first = 16777216f;
+            float second = 1f;
+            float third = 16777216f;
+            DynamicMethod reference = new DynamicMethod("MirrorVMClrSingleStack", typeof(float),
+                new[] { typeof(float), typeof(float), typeof(float) }, typeof(NumericClrChecks).Module, true);
+            ILGenerator il = reference.GetILGenerator();
+            il.Emit(ClrOpCodes.Ldarg_0);
+            il.Emit(ClrOpCodes.Ldarg_1);
+            il.Emit(ClrOpCodes.Add);
+            il.Emit(ClrOpCodes.Ldarg_2);
+            il.Emit(ClrOpCodes.Sub);
+            il.Emit(ClrOpCodes.Ret);
+            double expected = (float)reference.Invoke(null, new object[] { first, second, third });
+            byte[] code =
+            {
+                (byte)VirtualOpCode.LoadArgument, 0, 0,
+                (byte)VirtualOpCode.LoadArgument, 1, 0,
+                (byte)VirtualOpCode.Add,
+                (byte)VirtualOpCode.LoadArgument, 2, 0,
+                (byte)VirtualOpCode.Sub,
+                (byte)VirtualOpCode.Ret
+            };
+            double actual = (double)VirtualMachine.Execute(
+                VirtualMachine.Compile(code), new object[] { first, second, third });
+            if (actual != expected)
+            {
+                throw new InvalidOperationException("Single stack arithmetic on " + Environment.Version +
+                    " returned " + actual + "; CLR returned " + expected + ".");
+            }
         }
 
         private static void Check(
@@ -223,6 +555,8 @@ namespace MirrorVM.Sample
         {
             object expected = null;
             object actual = null;
+            string inputDescription = " with input " + values[0] +
+                (values.Length > 1 ? " and " + values[1] : "");
             Exception clrError = null;
             Exception vmError = null;
 
@@ -243,9 +577,9 @@ namespace MirrorVM.Sample
             try
             {
                 byte[] code = inputTypes.Length == 1
-                    ? new byte[] { (byte)VirtualOpCode.LoadArgument, 0, (byte)opcode }
-                    : new byte[] { (byte)VirtualOpCode.LoadArgument, 0,
-                        (byte)VirtualOpCode.LoadArgument, 1, (byte)opcode };
+                    ? new byte[] { (byte)VirtualOpCode.LoadArgument, 0, 0, (byte)opcode }
+                    : new byte[] { (byte)VirtualOpCode.LoadArgument, 0, 0,
+                        (byte)VirtualOpCode.LoadArgument, 1, 0, (byte)opcode };
                 actual = VirtualMachine.Execute(VirtualMachine.Compile(code), values);
             }
             catch (Exception exception) { vmError = exception; }
@@ -255,7 +589,7 @@ namespace MirrorVM.Sample
                     clrError + "; MirrorVM " + vmError + ".");
 
             if ((clrError == null ? null : clrError.GetType()) != (vmError == null ? null : vmError.GetType()))
-                throw new InvalidOperationException(opcode + " on " + inputTypes[0].FullName +
+                throw new InvalidOperationException(opcode + " on " + inputTypes[0].FullName + inputDescription +
                     " on " + Environment.Version + " differed: CLR threw " + clrError +
                     "; MirrorVM threw " + vmError + ".");
 
@@ -263,8 +597,11 @@ namespace MirrorVM.Sample
             {
                 object normalizedExpected = Normalize(expected);
                 object normalizedActual = NormalizeVm(actual, resultType);
-                if (!object.Equals(normalizedExpected, normalizedActual))
-                    throw new InvalidOperationException(opcode + " on " + inputTypes[0].FullName +
+                bool equal = resultType == typeof(float) || resultType == typeof(double)
+                    ? FloatingResultsEqual(expected, actual, resultType)
+                    : object.Equals(normalizedExpected, normalizedActual);
+                if (!equal)
+                    throw new InvalidOperationException(opcode + " on " + inputTypes[0].FullName + inputDescription +
                         " on " + Environment.Version + " returned " + normalizedActual +
                         "; CLR returned " + normalizedExpected + ".");
             }
@@ -334,6 +671,30 @@ namespace MirrorVM.Sample
             if (resultType == typeof(float))
                 return (double)(float)(double)value;
             return value;
+        }
+
+        private static bool FloatingResultsEqual(object expected, object actual, Type resultType)
+        {
+            if (resultType == typeof(float))
+            {
+                float expectedValue = (float)expected;
+                float actualValue = (float)(double)actual;
+                if (float.IsNaN(expectedValue) || float.IsNaN(actualValue))
+                    return float.IsNaN(expectedValue) && float.IsNaN(actualValue);
+                if (expectedValue == 0f && actualValue == 0f)
+                    return BitConverter.ToInt32(BitConverter.GetBytes(expectedValue), 0) ==
+                        BitConverter.ToInt32(BitConverter.GetBytes(actualValue), 0);
+                return expectedValue == actualValue;
+            }
+
+            double expectedDouble = (double)expected;
+            double actualDouble = (double)actual;
+            if (double.IsNaN(expectedDouble) || double.IsNaN(actualDouble))
+                return double.IsNaN(expectedDouble) && double.IsNaN(actualDouble);
+            if (expectedDouble == 0d && actualDouble == 0d)
+                return BitConverter.ToInt64(BitConverter.GetBytes(expectedDouble), 0) ==
+                    BitConverter.ToInt64(BitConverter.GetBytes(actualDouble), 0);
+            return expectedDouble == actualDouble;
         }
     }
 }

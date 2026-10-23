@@ -29,7 +29,7 @@
       <h1>Make the machine<br><em>easy to read.</em></h1>
       <div class="hero-bottom">
         <p class="hero-summary">Notes on .NET execution, virtual machines, and reverse engineering. MirrorVM development sits alongside the wider technical questions that help explain it.</p>
-        <p class="hero-index"><span>01—05</span><br>Current notes<br>October 2026</p>
+        <p class="hero-index"><span>01—06</span><br>Current notes<br>October 2026</p>
       </div>
       <div class="hero-rule" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
     </section>
@@ -40,7 +40,7 @@
           <p class="eyebrow">From the notebook</p>
           <h2 id="notes-title">Project notes</h2>
         </div>
-        <p class="section-aside">Five notes cover the M1 and M2 milestones, compatibility evidence, VM architecture, and interpreter design.</p>
+        <p class="section-aside">Six notes cover the M1 through M3 milestones, compatibility evidence, VM architecture, and interpreter design.</p>
       </div>
 
       <div class="note-list">
@@ -96,6 +96,16 @@
           </div>
           <div class="note-glyph glyph-stack" aria-hidden="true"><span>IL</span><span>VM</span><b>&#8594;</b></div>
         </article>
+        <article class="note-card">
+          <div class="note-number" aria-hidden="true">06</div>
+          <div class="note-content">
+            <p class="note-meta"><span>Release milestone M3</span><span>22 Oct 2026</span></p>
+            <h3><a href="posts/control-flow.html">M3 - Control flow</a></h3>
+            <p class="note-description">Translate short and long branches, comparisons, switches, and supported locals; validate stack flow and branch targets against original CLR output across the x86 and x64 sample matrix.</p>
+            <a class="read-link" href="posts/control-flow.html">Read the note <span aria-hidden="true">&#8599;</span></a>
+          </div>
+          <div class="note-glyph glyph-stack" aria-hidden="true"><span>CIL</span><span>CFG</span><b>&#8594;</b></div>
+        </article>
       </div>
     </section>
 
@@ -117,8 +127,8 @@
           <div><h3>M2 - Numeric values end to end</h3><p>Carry signed and unsigned integers, native integers, <code>Single</code>, and <code>Double</code> through arguments, constants, arithmetic, conversions, and typed returns. Implement arithmetic, bitwise, shift, comparison, <code>ckfinite</code>, and the full CIL <code>conv.*</code> family, including checked unsigned-source forms. CLR differential checks for implemented numeric opcodes and protected numeric methods passed all 26 configured matrix entries in x86 and x64 processes. <code>Decimal</code> is supported by value only; its arithmetic operators compile to calls.</p></div>
         </li>
         <li>
-          <span class="milestone-check" role="img" aria-label="Not complete"></span>
-          <div><h3>M3 - Control flow</h3><p>Translate branches and build enough control flow, branch targets, stack merges, and validation to run methods with decisions, loops, and switches.</p></div>
+          <span class="milestone-check is-checked" role="img" aria-label="Complete">&#10003;</span>
+          <div><h3>M3 - Control flow</h3><p>Translate short and long forms of <code>br</code>, <code>brtrue</code>/<code>brfalse</code>, all signed and unsigned comparison branches, and <code>switch</code>; support locals for implemented value kinds; validate branch targets, stack heights and kinds at merges, reachable fall-through, <code>maxstack</code>, and local assignment. The protected output matched the original CLR sample on all 26 configured matrix entries in x86 and x64 processes.</p></div>
         </li>
         <li>
           <span class="milestone-check" role="img" aria-label="Not complete"></span>
@@ -144,13 +154,14 @@
         <p class="section-aside">Unsupported methods keep their original bodies and are reported with a reason.</p>
       </div>
       <ul class="limits-list">
-        <li><strong>Method shape</strong><span>Only static, non-generic methods without locals or exception handlers, with up to 256 parameters.</span></li>
+        <li><strong>Method shape</strong><span>Static, non-generic methods without exception handlers; both value returns and <code>void</code> are supported. Argument indexes use CIL's 16-bit operand, with no lower 256-parameter MirrorVM cap. Parameter, return, and local types must be supported.</span></li>
         <li><strong>Signature types</strong><span>Boolean, built-in integers through 64-bit, <code>IntPtr</code>/<code>UIntPtr</code>, <code>Single</code>, <code>Double</code>, <code>Decimal</code>, and <code>String</code>.</span></li>
-        <li><strong>Instructions</strong><span>Linear argument loads, I4/I8/R4/R8 constants, <code>ldstr</code>, arithmetic, bitwise, shifts, comparisons, <code>neg</code>, <code>not</code>, <code>ckfinite</code>, numeric <code>conv.*</code>, <code>nop</code>, and final <code>ret</code>. Calls, branches, fields, arrays, and pointer/byref operations are unsupported.</span></li>
+        <li><strong>Instructions</strong><span>Argument and supported local loads/stores, numeric/string/null constants, arithmetic, bitwise, shifts, comparisons, <code>neg</code>, <code>not</code>, <code>ckfinite</code>, numeric <code>conv.*</code>, <code>nop</code>, short and long branches, <code>switch</code>, and <code>ret</code>. Calls, fields, arrays, exception regions, and pointer/byref operations are unsupported.</span></li>
         <li><strong>Skipped methods</strong><span>Unsupported methods remain unchanged with a reported reason. If no method qualifies, no protected output is written.</span></li>
-        <li><strong>Numeric behavior</strong><span>The implemented numeric opcode set passed CLR differential checks on each matrix runtime. <code>Decimal</code> passes by value, but its operators compile to unsupported calls; <code>Half</code>, <code>Int128</code>, <code>UInt128</code>, enums, arbitrary structs, and every legal CIL stack pairing remain outside this milestone.</span></li>
+        <li><strong>Validation</strong><span>Stack validation covers only the implemented CIL subset; it is not a full ECMA-335 verifier. Unsupported instructions and incompatible control-flow states keep the original method body.</span></li>
+        <li><strong>Numeric behavior</strong><span>Every implemented numeric opcode has CLR differential coverage on each matrix runtime, including signed and unsigned integer boundaries, checked and unchecked overflow, division/remainder edges, out-of-width shifts, conversion boundaries, signed zero, subnormals, finite extrema, infinities, and NaN. Framework x86 uses <code>Double</code> intermediates for <code>Single</code> stack arithmetic; x86 shift handling also matches the observed Framework and Core 2.0 CIL behavior. These are targeted cases, not a complete numeric proof. <code>Decimal</code> passes by value, but its operators compile to unsupported calls; <code>Half</code>, <code>Int128</code>, <code>UInt128</code>, enums, arbitrary structs, and other stack kinds remain outside this milestone.</span></li>
         <li><strong>Inputs and runtime</strong><span>Assemblies with strong-name public keys, mixed-mode assemblies, and native apphosts are rejected. Pass modern .NET apps as managed DLLs; keep <code>MirrorVM.Runtime.dll</code> beside the output.</span></li>
-        <li><strong>Compatibility evidence</strong><span>The protected sample and numeric CLR differential checks passed all 26 configured matrix entries in x86 and x64 processes. Framework 4.x ran on the installed 4.8.1 in-place CLR; those entries do not prove behavior on each historical 4.x runtime separately.</span></li>
+        <li><strong>Compatibility evidence</strong><span>The protected sample matched original CLR output on all 26 configured matrix entries in x86 and x64 processes. Framework 4.x ran on the installed 4.8.1 in-place CLR; those entries do not prove behavior on each historical 4.x runtime separately.</span></li>
       </ul>
       <a class="text-link" href="posts/method-virtualization.html">Read the protect-and-rewrite details <span aria-hidden="true">→</span></a>
     </section>

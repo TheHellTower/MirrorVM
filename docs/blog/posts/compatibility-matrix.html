@@ -27,7 +27,7 @@
     <article class="article-main">
       <div class="article-kicker"><span>Compatibility</span><span>4 October 2026</span></div>
       <h1>Compatibility is a target matrix, not a checkbox</h1>
-      <p class="article-deck">MirrorVM's compatibility goal spans .NET Framework 2.0 through 4.8.1 and modern .NET through 10. The protected sample and numeric CLR comparisons passed the configured matrix; Framework 4.x uses the installed in-place 4.8.1 CLR.</p>
+      <p class="article-deck">MirrorVM's compatibility goal spans .NET Framework 2.0 through 4.8.1 and modern .NET through 10. The protected sample matched its original CLR output across the configured x86 and x64 matrix; Framework 4.x uses the installed in-place 4.8.1 CLR.</p>
       <div class="article-rule"></div>
 
       <div class="article-body">
@@ -37,20 +37,20 @@
           <table class="matrix">
             <thead><tr><th>Execution group</th><th>Matrix entries</th><th>Result and boundary</th></tr></thead>
             <tbody>
-              <tr><td>Framework 2.0–3.5</td><td><code>net20</code>, mapped <code>net30</code>, <code>net35</code></td><td>All three entries passed in x86 and x64 processes. Framework 3.0 uses the CLR 2.0 line and the <code>net20</code> sample.</td></tr>
-              <tr><td>Framework 4.0–4.8.1</td><td><code>net40</code> through <code>net481</code></td><td>All target builds and x86/x64 runs passed on the installed Framework 4.8.1 in-place CLR; separate historical 4.x runtimes were not tested.</td></tr>
-              <tr><td>.NET Core 2.0–3.1</td><td><code>netcoreapp2.0</code> through <code>netcoreapp3.1</code></td><td>All five protected sample runs and numeric CLR comparison checks passed in x86 and x64 processes.</td></tr>
-              <tr><td>.NET 5–10</td><td><code>net5.0</code> through <code>net10.0</code></td><td>All six protected sample runs and numeric CLR comparison checks passed in x86 and x64 processes.</td></tr>
+              <tr><td>Framework 2.0–3.5</td><td><code>net20</code>, mapped <code>net30</code>, <code>net35</code></td><td>The original and protected sample output matched for all three entries in x86 and x64. Framework 3.0 uses the CLR 2.0 line and the <code>net20</code> sample.</td></tr>
+              <tr><td>Framework 4.0–4.8.1</td><td><code>net40</code> through <code>net481</code></td><td>Original and protected output matched on the installed Framework 4.8.1 in-place CLR in x86 and x64 processes; separate historical 4.x runtimes were not tested.</td></tr>
+              <tr><td>.NET Core 2.0–3.1</td><td><code>netcoreapp2.0</code> through <code>netcoreapp3.1</code></td><td>Original and protected output matched for all five entries in x86 and x64. Numeric opcode comparisons and a Single-precision stack probe also passed.</td></tr>
+              <tr><td>.NET 5–10</td><td><code>net5.0</code> through <code>net10.0</code></td><td>Original and protected output matched for all six entries in x86 and x64. Numeric opcode comparisons and a Single-precision stack probe also passed.</td></tr>
             </tbody>
           </table>
         </div>
 
         <h2>Builds and runs answer different questions</h2>
-        <p>Each matrix run protects the sample, executes its rewritten arithmetic, string, and numeric methods, and runs a DynamicMethod CLR comparison for every implemented numeric opcode. Any difference in result or exception stops the sample. All 26 configured entries passed at both pointer widths, for 52 protected sample runs.</p>
+        <p>Each matrix run executes the original sample, protects a copy of that same assembly, then compares the protected output line by line with the original output. The sample also runs CLR-generated comparisons for every implemented numeric opcode across selected integer endpoints, checked and unchecked overflow, division/remainder, shift counts around and beyond operand widths, conversion boundaries, signed zero, subnormals, infinities, NaN, and a multi-instruction Single-precision stack case. A protected/original difference or numeric result/exception mismatch fails the run. These are targeted cases, not an exhaustive numeric proof. All 26 configured entries passed at both pointer widths, for 52 protected sample runs.</p>
         <p>Framework 4.x uses the machine's .NET Framework 4.8.1 in-place CLR, so those runs verify target-specific sample builds under that runtime, not the behavior of each historical 4.x runtime installed separately. The Framework 3.0 entry reuses the Framework 2.0 sample because the old SDK has no separate 3.0 reference pack.</p>
         <div class="fact-box">
           <strong>Verified scope</strong>
-          <p>The Release solution builds 25 configured sample targets. The 26-entry protected sample matrix passed in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 17 unit tests pass on the .NET 9 x64 host. Framework 4.x execution uses the installed 4.8.1 in-place CLR.</p>
+          <p>The Release solution builds 25 configured sample targets. Original-versus-protected output matched on all 26 matrix entries in x86 and x64 processes, from Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. All 25 unit tests pass on the .NET 9 x64 host. Framework 4.x execution uses the installed 4.8.1 in-place CLR.</p>
         </div>
         <p>This matrix verifies behavior for the current sample and implemented numeric comparisons; it is not a performance benchmark. The dispatch, stack, and decode changes are described in <a href="interpreter-optimizations.html">Reducing repeated work in the interpreter</a>, with timing results scoped to that post's workload.</p>
 
@@ -59,7 +59,7 @@
         <p>For Framework 4.6.1 and later, .NET Standard 2.0 is the intended shared library path. Microsoft's documentation notes that .NET Framework 4.6.1 has known .NET Standard consumption issues and recommends 4.7.2 or later. See <a href="https://learn.microsoft.com/dotnet/standard/net-standard?tabs=net-standard-2-0">Microsoft's .NET Standard support matrix</a> and <a href="https://learn.microsoft.com/en-us/dotnet/core/porting/framework-overview">the .NET Framework porting overview</a>.</p>
 
         <h2>Keep the compatibility claim narrow</h2>
-        <p>The matrix is evidence for the implemented linear method subset and the numeric cases in the sample; it does not establish full CLR compatibility. The converter does not yet support locals, branches, calls, fields, arrays, byrefs, pointers, or exception regions. A method containing an unsupported opcode is left unchanged and reported, so an application may contain both virtualized and ordinary methods.</p>
+        <p>The matrix covers the implemented scalar and string subset, including branches, a loop, switch dispatch, supported locals, numeric edge comparisons, and the single-precision stack case. It does not establish full CLR compatibility. Calls, fields, arrays, byrefs, pointers, and exception regions remain unsupported; stack validation is limited to the translated subset. A method containing an unsupported opcode is left unchanged and reported, so an application may contain both virtualized and ordinary methods. See <a href="control-flow.html">M3 - Control flow</a> for the current branch and local coverage.</p>
 
         <div class="article-end">
           <p><a href="../index.html">← Back to all notes</a></p>

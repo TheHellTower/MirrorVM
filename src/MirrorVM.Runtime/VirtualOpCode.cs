@@ -9,6 +9,11 @@ namespace MirrorVM
         LoadInt64 = 0x04,
         LoadSingle = 0x05,
         LoadDouble = 0x06,
+        Nop = 0x07,
+        Ldloc = 0x08,
+        Stloc = 0x09,
+        Ret = 0x0A,
+        Ldnull = 0x0B,
 
         Add = 0x10,
         AddOvf = 0x11,
@@ -71,6 +76,21 @@ namespace MirrorVM
         ConvOvfI8Un = 0x50,
         ConvOvfU8Un = 0x51,
         ConvOvfIUn = 0x52,
-        ConvOvfUUn = 0x53
+        ConvOvfUUn = 0x53,
+
+        Br = 0x60,
+        Brfalse = 0x61,
+        Brtrue = 0x62,
+        Beq = 0x63,
+        Bge = 0x64,
+        BgeUn = 0x65,
+        Bgt = 0x66,
+        BgtUn = 0x67,
+        Ble = 0x68,
+        BleUn = 0x69,
+        Blt = 0x6A,
+        BltUn = 0x6B,
+        BneUn = 0x6C,
+        Switch = 0x6D
     }
 }

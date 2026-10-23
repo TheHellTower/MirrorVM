@@ -10,17 +10,19 @@ ready to use as a GitHub Pages publishing source; Pages still needs to be
 enabled and configured in the repository settings.
 
 The top navigation links to Virtualization, Compatibility, and Architecture.
-The project notes list the M1 and M2 posts, compatibility evidence, VM
-architecture, and interpreter optimizations. Milestone post titles match their
-README milestone names.
+The project notes list the M1, M2, and M3 posts, compatibility evidence, VM
+architecture, and interpreter optimizations. Milestone post titles and
+descriptions match the README milestone names and descriptions.
 
 The compatibility goal spans .NET Framework 2.0 through 4.8.1 and modern .NET
 through 10. The runtime targets `net20`, `netstandard2.0`, and `net9.0`; the
-virtualizer and tests target .NET 9. The protected sample and numeric CLR
-differential checks passed all 26 configured matrix entries in both x86 and x64
-processes. Framework 4.x uses the installed 4.8.1 in-place CLR, so those entries
-do not prove separate historical 4.x runtime behavior. Keep this boundary clear
-in all pages.
+virtualizer and tests target .NET 9. Original and protected sample output
+matched on all 26 configured matrix entries in both x86 and x64 processes. The
+sample also runs CLR-generated comparisons for numeric boundaries, overflow,
+division/remainder, shifts, conversions, and floating-point edge values; 25
+unit tests pass on .NET 9. Framework 4.x uses the installed 4.8.1 in-place
+CLR, so those entries do not prove separate historical 4.x runtime behavior.
+Keep this boundary clear in all pages.
 
 ## Adding a post
 
@@ -30,5 +32,7 @@ milestone post, use the exact milestone name in its page title and project-note
 card.
 Keep results, runtime support, screenshots, and diagrams tied to evidence that
 exists. Keep the homepage's development milestones and known limitations in
-sync with the README and implementation. Do not describe a suggested or planned
-visual as a captured result.
+sync with the README and implementation. M3 covers short and long branches,
+switch, supported locals, and reachable stack validation; it does not establish
+full ECMA-335 verification. Do not describe a suggested or planned visual as a
+captured result.

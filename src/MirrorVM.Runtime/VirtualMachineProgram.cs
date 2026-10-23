@@ -4,10 +4,14 @@ namespace MirrorVM
     public sealed class VirtualMachineProgram
     {
         internal readonly VirtualMachineInstruction[] Instructions;
+        internal readonly VirtualMachineValue[] LocalDefaults;
 
-        internal VirtualMachineProgram(VirtualMachineInstruction[] instructions)
+        internal VirtualMachineProgram(
+            VirtualMachineInstruction[] instructions,
+            VirtualMachineValue[] localDefaults)
         {
             Instructions = instructions;
+            LocalDefaults = localDefaults;
         }
     }
 
@@ -21,5 +25,16 @@ namespace MirrorVM
             OpCode = opCode;
             Operand = operand;
         }
+    }
+
+    internal enum VirtualMachineLocalKind : byte
+    {
+        Int32,
+        Int64,
+        NativeInt,
+        Single,
+        Double,
+        Decimal,
+        String
     }
 }

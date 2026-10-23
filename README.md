@@ -40,9 +40,12 @@ rewritten method.
   numeric opcodes and protected numeric methods passed all 26 configured matrix
   entries in x86 and x64 processes. `Decimal` is supported by value only; its
   arithmetic operators compile to calls.
-- [ ] **M3 - Control flow:** Translate branches and build enough control
-  flow, branch targets, stack merges, and validation to run methods with
-  decisions, loops, and switches.
+- [x] **M3 - Control flow:** Translate short and long forms of `br`,
+  `brtrue`/`brfalse`, all signed and unsigned comparison branches, and `switch`;
+  support locals for implemented value kinds; validate branch targets, stack
+  heights and kinds at merges, reachable fall-through, `maxstack`, and local
+  assignment. The protected output matched the original CLR sample on all 26
+  configured matrix entries in x86 and x64 processes.
 - [ ] **M4 - Method calls and dispatch:** Add `call`, `callvirt`, and object
   creation with argument and return handling. Cover overloads, virtual and
   abstract methods, interface dispatch, structs, generic methods/types, and the
@@ -63,21 +66,30 @@ rewritten method.
 ## Known limitations
 
 - Conversion currently accepts only static, non-generic methods without
-  locals or exception handlers and with up to 256 parameters. Supported
-  parameter and return types are Boolean, the built-in integer types through
-  64-bit, `IntPtr`/`UIntPtr`, `Single`, `Double`, `Decimal`, and `String`.
-- The supported CIL subset is linear: argument loads, I4/I8/R4/R8 constants,
-  `ldstr`, integer and floating arithmetic, bitwise operations, shifts,
-  comparisons, `neg`, `not`, `ckfinite`, all numeric `conv.*` opcodes, `nop`,
-  and a final `ret`. Calls, branches, fields, arrays, and pointer/byref
-  operations are not supported yet.
+  exception handlers. Both value-returning and `void` methods are supported.
+  Argument indexes use CIL's 16-bit operand; there is no lower 256-parameter
+  MirrorVM cap. Supported parameter and return types are Boolean, the built-in integer types through
+  64-bit, `IntPtr`/`UIntPtr`, `Single`, `Double`, `Decimal`, and `String`;
+  locals must use those supported kinds.
+- The supported CIL subset includes argument and local loads/stores, I4/I8/R4/R8
+  constants, `ldstr`, `ldnull`, integer and floating arithmetic, bitwise
+  operations, shifts, comparisons, `neg`, `not`, `ckfinite`, all numeric
+  `conv.*` opcodes, `nop`, short and long branch forms, `switch`, and `ret`.
+  Calls, fields, arrays, exception regions, and pointer/byref operations are
+  not supported yet.
 - A method with an unsupported feature is left unchanged and reported. If no
   methods qualify, no protected assembly is written.
 - `Decimal` operators and user-defined numeric operators compile to method calls
   and are skipped until call support. Enums, arbitrary structs, object and array
   references, and unsafe or managed pointers are outside the current subset.
-- The converter handles only linear stack flow. Branches, stack merges, locals,
-  exception regions, and the broader CLR verification rules are not implemented.
+- Framework x86 can retain wider floating-point intermediates on the CIL stack.
+  MirrorVM models this with `Double` intermediates for `Single` arithmetic on
+  that runtime. The differential sample also covers signed zero, least
+  subnormals, finite extrema, infinities, NaN, and selected conversion and shift
+  boundaries; these probes are not an exhaustive floating-point proof.
+- Stack validation covers the implemented CIL subset; it is not a full ECMA-335
+  verifier. Methods with unsupported instructions or incompatible control-flow
+  states are left unchanged.
 - Assemblies with a strong-name public key, mixed-mode assemblies, and native
   apphosts are rejected. For modern .NET applications, pass the managed
   `.dll`, not the native apphost.
@@ -95,12 +107,16 @@ and 3.5 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. Framework
 uses the `net20` sample for its CLR 2.0 execution line.
 
 The Release solution builds all 25 configured sample targets. The protected
-sample and its CLR differential checks passed all 26 matrix entries in both
+sample matched its original CLR output across all 26 matrix entries in both
 x86 and x64 processes: Framework 2.0/3.0/3.5 and 4.0–4.8.1, Core 2.0–3.1, and
 .NET 5–10. Framework 3.0 uses the `net20` sample on the CLR 2.0 line. Framework
 4.x targets execute on the installed 4.8.1 in-place CLR, not separate
-historical 4.x runtimes. The 17 unit tests pass on .NET 9. Legacy Core targets
+historical 4.x runtimes. The 25 unit tests pass on .NET 9. Legacy Core targets
 produce NuGet vulnerability warnings because those runtimes are out of support.
+The CLR differential sample covers selected integer boundaries, checked and
+unchecked overflow, division/remainder, shift counts, conversion limits,
+signed zero, subnormals, infinities, and NaN; it is not an exhaustive numeric
+proof.
 
 ## Build, test, and run
 
@@ -133,8 +149,8 @@ Framework executable). Run a modern .NET output with `dotnet` and keep
 - `src/MirrorVM.Runtime`: bytecode compiler and interpreter, indexed opcode
   table, contiguous VM stack, handlers, and numeric arithmetic helper.
 - `tests/MirrorVM.Tests`: CLR comparison and protected-method tests.
-- `Samples/MirrorVM.Sample`: cross-target protected arithmetic and numeric sample.
-- `scripts/verify-runtime-matrix.ps1`: builds and runs the protected sample per target.
+- `Samples/MirrorVM.Sample`: cross-target numeric and control-flow fixtures.
+- `scripts/verify-runtime-matrix.ps1`: compares original and protected sample output per target.
 - `docs`: GitHub Pages source; its root page redirects to the blog.
 - `docs/blog`: technical notes and diagrams.
 

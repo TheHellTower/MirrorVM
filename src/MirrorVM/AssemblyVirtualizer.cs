@@ -99,6 +99,7 @@ namespace MirrorVM.Protector
                             string reason;
                             if (!MethodBodyConverter.TryConvert(method, out byteCode, out reason))
                             {
+                                if (method.HasBody) method.Body.KeepOldMaxStack = true;
                                 skippedMethods.Add(FormatMethodName(type, method) + " — " + reason);
                                 continue;
                             }
@@ -286,6 +287,13 @@ namespace MirrorVM.Protector
             }
 
             body.Instructions.Add(Instruction.Create(OpCodes.Call, runtimeEntryPoint));
+            if (method.MethodSig.RetType.ElementType == ElementType.Void)
+            {
+                body.Instructions.Add(Instruction.Create(OpCodes.Pop));
+                body.Instructions.Add(Instruction.Create(OpCodes.Ret));
+                return body;
+            }
+
             string returnType = method.MethodSig.RetType.FullName;
             if (returnType == "System.String")
             {

@@ -33,6 +33,8 @@ namespace MirrorVM.Sample
             Console.WriteLine(NumericFixtures.SingleIdentity(1.25f));
             Console.WriteLine(NumericFixtures.DoubleIdentity(2.5d));
             Console.WriteLine(NumericFixtures.DecimalIdentity(123.45m));
+            Console.WriteLine(NumericFixtures.StringIdentity("local string"));
+            Console.WriteLine(NumericFixtures.StringIdentity(null) == null);
             Console.WriteLine(NumericFixtures.Int64Constant());
             Console.WriteLine(NumericFixtures.SingleConstant());
             Console.WriteLine(NumericFixtures.DoubleConstant());
@@ -59,6 +61,28 @@ namespace MirrorVM.Sample
             Console.WriteLine(NumericFixtures.GreaterThanUnsigned(uint.MaxValue, 1U));
             Console.WriteLine(NumericFixtures.LessThan(41, 42));
             Console.WriteLine(NumericFixtures.LessThanUnsigned(1U, uint.MaxValue));
+
+            Console.WriteLine(ControlFlowFixtures.Choose(-5));
+            Console.WriteLine(ControlFlowFixtures.Choose(0));
+            Console.WriteLine(ControlFlowFixtures.Choose(12));
+            Console.WriteLine(ControlFlowFixtures.SumTo(10));
+            Console.WriteLine(ControlFlowFixtures.SwitchChoice(2));
+            Console.WriteLine(ControlFlowFixtures.SwitchChoice(9));
+            Console.WriteLine(ControlFlowFixtures.LongSwitchBranch(-1));
+            Console.WriteLine(ControlFlowFixtures.LongSwitchBranch(20));
+            Console.WriteLine(ControlFlowFixtures.LongSwitchBranch(40));
+            Console.WriteLine(ControlFlowFixtures.UnsignedAtLeast(uint.MaxValue, 1U));
+            Console.WriteLine(ControlFlowFixtures.FloatLessThan(float.NaN, 1f));
+            Console.WriteLine(ControlFlowFixtures.NestedChoice(-6));
+            Console.WriteLine(ControlFlowFixtures.NestedChoice(0));
+            Console.WriteLine(ControlFlowFixtures.NestedChoice(4));
+            Console.WriteLine(ControlFlowFixtures.IsNull(null));
+            Console.WriteLine(ControlFlowFixtures.UseOrFallback(null));
+            Console.WriteLine(ControlFlowFixtures.LoneSurrogate() == "\uD800");
+            Console.WriteLine(ControlFlowFixtures.ChooseNullOrValue(false, "value") == null);
+            Console.WriteLine(ControlFlowFixtures.ChooseNullOrValue(true, "value"));
+            ControlFlowFixtures.VoidReturn();
+            Console.WriteLine("void-return");
 
             try
             {

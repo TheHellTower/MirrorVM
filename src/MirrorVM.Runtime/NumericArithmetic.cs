@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
+#if NETSTANDARD2_0 || NET9_0
+using System.IO;
+#endif
 
 namespace MirrorVM
 {
@@ -22,6 +25,23 @@ namespace MirrorVM
 
     internal static class NumericArithmetic
     {
+        private static readonly bool PreserveFrameworkX86FloatStack =
+            IntPtr.Size == 4 && typeof(object).Assembly.GetName().Name == "mscorlib";
+#if NETSTANDARD2_0 || NET9_0
+        private static readonly bool UseLegacyX86LongShiftSemantics =
+            IntPtr.Size == 4 &&
+            ((typeof(object).Assembly.GetName().Name == "mscorlib" && Environment.Version.Major < 5) ||
+             IsCore20Runtime());
+        private static bool IsCore20Runtime()
+        {
+            string runtimeVersion = Path.GetFileName(Path.GetDirectoryName(typeof(object).Assembly.Location));
+            return runtimeVersion.StartsWith("2.0.", StringComparison.Ordinal);
+        }
+#else
+        private static readonly bool UseLegacyX86LongShiftSemantics =
+            IntPtr.Size == 4 && Environment.Version.Major < 5;
+#endif
+
         public static VirtualMachineValue NormalizeStackValue(object value)
         {
             if (value == null)
@@ -143,6 +163,12 @@ namespace MirrorVM
                     return VirtualMachineValue.FromNativeInt(
                         ApplyNativeInt(left.AsNativeInt(), right.AsNativeInt(), operation));
                 case VirtualMachineValueKind.Single:
+                    if (PreserveFrameworkX86FloatStack)
+                    {
+                        return VirtualMachineValue.FromDouble(
+                            ApplyDouble(left.AsSingle(), right.AsSingle(), operation));
+                    }
+
                     return VirtualMachineValue.FromSingle(ApplySingle(left.AsSingle(), right.AsSingle(), operation));
                 case VirtualMachineValueKind.Double:
                     return VirtualMachineValue.FromDouble(ApplyDouble(left.AsDouble(), right.AsDouble(), operation));
@@ -257,9 +283,12 @@ namespace MirrorVM
                         : intValue << shift);
                 case VirtualMachineValueKind.Int64:
                     long longValue = value.AsInt64();
+                    int longShift = UseLegacyX86LongShiftSemantics && (shift < 0 || shift >= 64)
+                        ? 32 + ((shift - 32) & 31)
+                        : shift;
                     return VirtualMachineValue.FromInt64(right
-                        ? (unsigned ? unchecked((long)((ulong)longValue >> shift)) : longValue >> shift)
-                        : longValue << shift);
+                        ? (unsigned ? unchecked((long)((ulong)longValue >> longShift)) : longValue >> longShift)
+                        : longValue << longShift);
                 case VirtualMachineValueKind.NativeInt:
                     IntPtr native = value.AsNativeInt();
                     if (IntPtr.Size == 4)
@@ -284,11 +313,27 @@ namespace MirrorVM
             VirtualMachineValue left,
             VirtualMachineValue right)
         {
+            if (left.Kind == VirtualMachineValueKind.Object || right.Kind == VirtualMachineValueKind.Object)
+            {
+                if (left.Kind != VirtualMachineValueKind.Object || right.Kind != VirtualMachineValueKind.Object ||
+                    (opcode != VirtualOpCode.Ceq && opcode != VirtualOpCode.Beq && opcode != VirtualOpCode.BneUn))
+                {
+                    throw new InvalidOperationException("Comparison requires compatible value kinds.");
+                }
+
+                bool sameReference = ReferenceEquals(left.AsObject(), right.AsObject());
+                return VirtualMachineValue.FromInt32(
+                    (opcode == VirtualOpCode.BneUn ? !sameReference : sameReference) ? 1 : 0);
+            }
+
             left = NormalizeNumber(left);
             right = NormalizeNumber(right);
             VirtualMachineValueKind leftKind = left.Kind;
             VirtualMachineValueKind rightKind = right.Kind;
-            bool unsigned = opcode == VirtualOpCode.CgtUn || opcode == VirtualOpCode.CltUn;
+            bool unsigned = opcode == VirtualOpCode.CgtUn || opcode == VirtualOpCode.CltUn ||
+                opcode == VirtualOpCode.BgeUn || opcode == VirtualOpCode.BgtUn ||
+                opcode == VirtualOpCode.BleUn || opcode == VirtualOpCode.BltUn ||
+                opcode == VirtualOpCode.BneUn;
 
             if (leftKind == VirtualMachineValueKind.NativeInt && rightKind == VirtualMachineValueKind.Int32)
             {
@@ -378,6 +423,16 @@ namespace MirrorVM
                 case VirtualOpCode.CgtUn: return VirtualMachineValue.FromInt32(greater || unordered ? 1 : 0);
                 case VirtualOpCode.Clt: return VirtualMachineValue.FromInt32(less ? 1 : 0);
                 case VirtualOpCode.CltUn: return VirtualMachineValue.FromInt32(less || unordered ? 1 : 0);
+                case VirtualOpCode.Beq: return VirtualMachineValue.FromInt32(equal ? 1 : 0);
+                case VirtualOpCode.BneUn: return VirtualMachineValue.FromInt32(!equal || unordered ? 1 : 0);
+                case VirtualOpCode.Bge: return VirtualMachineValue.FromInt32(greater || equal ? 1 : 0);
+                case VirtualOpCode.BgeUn: return VirtualMachineValue.FromInt32(greater || equal || unordered ? 1 : 0);
+                case VirtualOpCode.Bgt: return VirtualMachineValue.FromInt32(greater ? 1 : 0);
+                case VirtualOpCode.BgtUn: return VirtualMachineValue.FromInt32(greater || unordered ? 1 : 0);
+                case VirtualOpCode.Ble: return VirtualMachineValue.FromInt32(less || equal ? 1 : 0);
+                case VirtualOpCode.BleUn: return VirtualMachineValue.FromInt32(less || equal || unordered ? 1 : 0);
+                case VirtualOpCode.Blt: return VirtualMachineValue.FromInt32(less ? 1 : 0);
+                case VirtualOpCode.BltUn: return VirtualMachineValue.FromInt32(less || unordered ? 1 : 0);
                 default: throw new InvalidOperationException("The comparison opcode is not supported.");
             }
         }
@@ -461,7 +516,7 @@ namespace MirrorVM
                 if (checkedConversion)
                 {
                     if (unsignedSource && (bits == 8 || bits == 16) && IntPtr.Size == 4 &&
-                        Environment.Version.Major < 6 && ToDouble(value) < 0d)
+                        Environment.Version.Major < 6 && ToDouble(value) <= -1d)
                     {
                         throw new OverflowException();
                     }

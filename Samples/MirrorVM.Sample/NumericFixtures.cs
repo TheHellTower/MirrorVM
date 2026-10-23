@@ -3,23 +3,34 @@ using System;
 
 namespace MirrorVM.Sample
 {
+    public enum NumericEnum : ushort { Value = 1 }
+
+    public struct NumericStruct { public int Value; }
+
     public static class NumericFixtures
     {
-        public static bool BooleanIdentity(bool value) { return value; }
-        public static sbyte SByteIdentity(sbyte value) { return value; }
-        public static byte ByteIdentity(byte value) { return value; }
-        public static short Int16Identity(short value) { return value; }
-        public static ushort UInt16Identity(ushort value) { return value; }
-        public static char CharIdentity(char value) { return value; }
-        public static int Int32Identity(int value) { return value; }
-        public static uint UInt32Identity(uint value) { return value; }
-        public static long Int64Identity(long value) { return value; }
-        public static ulong UInt64Identity(ulong value) { return value; }
-        public static IntPtr IntPtrIdentity(IntPtr value) { return value; }
-        public static UIntPtr UIntPtrIdentity(UIntPtr value) { return value; }
-        public static float SingleIdentity(float value) { return value; }
-        public static double DoubleIdentity(double value) { return value; }
-        public static decimal DecimalIdentity(decimal value) { return value; }
+        public static bool BooleanIdentity(bool value) { bool local; if (value) local = true; else local = false; return local; }
+        public static sbyte SByteIdentity(sbyte value) { sbyte local; if (value == 0) local = 0; else local = value; return local; }
+        public static byte ByteIdentity(byte value) { byte local; if (value == 0) local = 0; else local = value; return local; }
+        public static short Int16Identity(short value) { short local; if (value == 0) local = 0; else local = value; return local; }
+        public static ushort UInt16Identity(ushort value) { ushort local; if (value == 0) local = 0; else local = value; return local; }
+        public static char CharIdentity(char value) { char local; if (value == '\0') local = '\0'; else local = value; return local; }
+        public static int Int32Identity(int value) { int local; if (value == 0) local = 0; else local = value; return local; }
+        public static uint UInt32Identity(uint value) { uint local; if (value == 0U) local = 0U; else local = value; return local; }
+        public static long Int64Identity(long value) { long local; if (value == 0L) local = 0L; else local = value; return local; }
+        public static ulong UInt64Identity(ulong value) { ulong local; if (value == 0UL) local = 0UL; else local = value; return local; }
+        public static IntPtr IntPtrIdentity(IntPtr value) { IntPtr local = value; return local; }
+        public static UIntPtr UIntPtrIdentity(UIntPtr value) { UIntPtr local = value; return local; }
+        public static float SingleIdentity(float value) { float local; if (value == 0f) local = value; else local = value; return local; }
+        public static double DoubleIdentity(double value) { double local; if (value == 0d) local = value; else local = value; return local; }
+        public static decimal DecimalIdentity(decimal value) { decimal local = value; return local; }
+        public static string StringIdentity(string value) { string local; if (value == null) local = null; else local = value; return local; }
+        public static NumericEnum EnumIdentity(NumericEnum value) { return value; }
+        public static NumericStruct StructIdentity(NumericStruct value) { return value; }
+        public static object ObjectIdentity(object value) { return value; }
+        public static int[] ArrayIdentity(int[] value) { return value; }
+        public static int ByRefValue(ref int value) { return value; }
+        public static T GenericIdentity<T>(T value) { return value; }
 
         public static long Int64Constant() { return 0x1020304050607080L; }
         public static float SingleConstant() { return 1.25f; }

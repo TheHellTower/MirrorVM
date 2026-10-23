@@ -87,7 +87,7 @@ state.<span class="syntax-method">Push</span>(<span class="syntax-type">NumericA
           <p>For this constant-heavy I4 program on this .NET 9 x64 machine, the revised interpreter completed the measured calls sooner and allocated fewer managed bytes. This is one microbenchmark, not a general speed guarantee. It excludes generated method-stub work, non-empty argument arrays, other value kinds, other runtimes, and first-use compilation cost.</p>
         </div>
 
-        <p>The implementation was also covered by the existing 17 unit tests and the 26-entry protected sample matrix in x86 and x64 processes. Those checks verify the tested behavior across the configured targets; they are not performance measurements.</p>
+        <p>The implementation was also covered by 25 unit tests and the 26-entry original-versus-protected sample matrix in x86 and x64 processes. Those checks verify the tested behavior across the configured targets; they are not performance measurements.</p>
 
         <div class="article-end">
           <p><a href="../index.html">← Back to all notes</a></p>

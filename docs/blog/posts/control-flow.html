@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="M3 - Control flow: branches, switches, locals, and reachable stack validation in MirrorVM, checked against original CLR output across x86 and x64 targets.">
+  <title>M3 - Control flow — MirrorVM Field Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html" aria-label="MirrorVM Field Notes home">
+        <span class="brand-mark" aria-hidden="true">M<span>/</span>V</span>
+        <span class="brand-name">MirrorVM <b>Field Notes</b></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="method-virtualization.html">Virtualization</a>
+        <a href="compatibility-matrix.html">Compatibility</a>
+        <a href="../architecture.html">Architecture</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="article" class="article-shell">
+    <article class="article-main">
+      <div class="article-kicker"><span>Release milestone M3</span><span>22 October 2026</span></div>
+      <h1>M3 - Control flow</h1>
+      <p class="article-deck">MirrorVM now translates conditional branches, loops, switch tables, and locals for its supported value kinds. The converter checks reachable stack flow before replacing a method; the protected sample matched its original CLR output across every configured x86 and x64 matrix entry.</p>
+      <div class="article-rule"></div>
+
+      <div class="article-body">
+        <h2>What M3 adds</h2>
+        <p>The bytecode now has its own handlers for unconditional branches, truth branches, the signed and unsigned comparison branch family, and <code>switch</code>. Both short and long CIL branch encodings map to the same VM opcode. The converter also translates <code>ldloc</code> and <code>stloc</code> forms, including the compact <code>.0</code> through <code>.3</code> forms.</p>
+        <p>Branches change the VM instruction pointer. A comparison branch consumes its two operands and pushes no result. <code>switch</code> consumes an <code>Int32</code> selector; a negative or out-of-range selector follows the next instruction, as the CIL instruction specifies.</p>
+
+        <h2>A method becomes a branch and two exits</h2>
+        <p>For a small sign check, the VM bytecode can be written as:</p>
+        <pre><code><span class="syntax-keyword">static</span> <span class="syntax-keyword">int</span> <span class="syntax-method">Sign</span>(<span class="syntax-keyword">int</span> value)
+{
+    <span class="syntax-keyword">if</span> (value &lt; 0) <span class="syntax-keyword">return</span> -1;
+    <span class="syntax-keyword">return</span> 1;
+}
+
+01 00 00          LoadArgument 0
+02 00 00 00 00    LoadInt32 0
+64 05 00 00 00    Bge instruction 5
+02 FF FF FF FF    LoadInt32 -1
+0A                Ret
+02 01 00 00 00    LoadInt32 1
+0A                Ret</code></pre>
+        <p>This is one valid lowering of the method. Each bytecode opcode begins one decoded instruction. <code>Bge</code> has ID <code>0x64</code>; its four-byte little-endian operand is the absolute decoded instruction index <code>5</code>. It pops the argument and zero. Nonnegative values branch to instruction 5; negative values continue to the <code>-1</code> return.</p>
+
+        <h2>Branch behavior follows the operand kinds</h2>
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead><tr><th>Bytecode group</th><th>Stack effect</th><th>Implemented behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code>Br</code></td><td>Pop none</td><td>Set the instruction pointer to the decoded target.</td></tr>
+              <tr><td><code>Brtrue</code>, <code>Brfalse</code></td><td>Pop one</td><td>Test supported integer kinds for zero and supported string/null references for null.</td></tr>
+              <tr><td><code>Beq</code>, <code>BneUn</code></td><td>Pop two</td><td>Compare compatible numeric values or string/null references by identity. <code>BneUn</code> takes the branch for unordered floating-point comparisons.</td></tr>
+              <tr><td><code>Bge</code>, <code>Bgt</code>, <code>Ble</code>, <code>Blt</code> and <code>.un</code> forms</td><td>Pop two</td><td>Use signed or unsigned integer comparison as selected by the opcode. The <code>.un</code> forms also take the branch when either floating-point input is NaN.</td></tr>
+              <tr><td><code>Switch</code></td><td>Pop one <code>Int32</code></td><td>Use an in-range nonnegative selector as a table index; otherwise continue after the table.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><code>ldstr</code> values are interned when bytecode is decoded. That keeps <code>ceq</code>, <code>beq</code>, and <code>bne.un</code> identity comparisons consistent when equal CIL string literals are loaded. Ordinary string equality still means reference identity at the CIL comparison instruction; C#'s overloaded string <code>==</code> uses a method call, which remains unsupported.</p>
+
+        <h2>Locals and control-flow validation</h2>
+        <p>A local instruction carries its index and declared VM kind. When the CIL body has <code>initlocals</code>, the VM creates the corresponding CLR default value. If it is disabled, the converter requires a local to be assigned on every reachable path before a load.</p>
+        <p>Before emitting bytecode, a worklist starts at the method entry and follows branch targets, switch cases, and reachable fall-through. At each merge, incoming paths must agree on stack height and compatible kinds. The converter also rejects invalid targets, reachable fall-through past the body, and a computed stack depth greater than the CIL <code>maxstack</code>. A method with an invalid or unsupported instruction remains unchanged as a whole.</p>
+        <p>This is stack validation for the translated subset, not a complete ECMA-335 verifier. Calls, <code>leave</code>, exception regions, fields, arrays, object and arbitrary struct signatures, managed byrefs, pointers, and function pointers remain outside M3.</p>
+
+        <h2>Verification and scope</h2>
+        <p>The sample exercises nested decisions, a loop with locals, a dense 40-case <code>switch</code> that forces a long conditional branch, unsigned comparison, floating-point NaN, null checks, string/null merges, and an unpaired-surrogate literal. Converter rejection tests cover branch and switch targets outside the method, incompatible stack heights and kinds at merges, reachable fall-through, a <code>maxstack</code> violation, stack underflow, and a local read unassigned on one incoming path. A unit test confirms the CIL contains the long branch and switch. For each target, the matrix runner executes the original sample and compares it line by line with the protected copy. The sample also runs CLR-generated comparisons for the implemented numeric opcodes and a multi-instruction Single-precision stack case.</p>
+        <p>The Release solution builds all 25 configured sample targets. Original and protected output matched for all 26 matrix entries in x86 and x64 processes: Framework 2.0 through 4.8.1, Core 2.0 through 3.1, and .NET 5 through 10. Framework 3.0 uses the Framework 2.0 sample and CLR line; Framework 4.x uses the installed 4.8.1 in-place CLR. The 25 unit tests pass on .NET 9.</p>
+        <p>On x86 .NET Framework, the sample shows that floating values can retain wider intermediate precision while they remain on the evaluation stack. MirrorVM uses Double intermediates for Single arithmetic on this runtime and rounds on local stores and returns. The sample checks the expression <code>16777216f + 1f - 16777216f</code> against a generated CLR method. Numeric comparisons also cover signed zero, least subnormals, finite extrema, infinities, NaN, and selected conversion and shift boundaries. These are broad targeted probes, not an exhaustive floating-point proof. See <a href="integer-arithmetic.html">M2 - Numeric values end to end</a> and the <a href="compatibility-matrix.html">compatibility evidence</a>.</p>
+
+        <div class="article-end">
+          <p><a href="../index.html">&#8592; Back to all notes</a></p>
+        </div>
+      </div>
+      <nav class="post-nav" aria-label="Adjacent articles">
+        <a href="integer-arithmetic.html">&#8592; M2 - Numeric values end to end</a>
+        <a href="../architecture.html">Architecture &#8594;</a>
+      </nav>
+    </article>
+    <aside class="article-aside">
+      <div class="aside-card">
+        <p class="eyebrow">At a glance</p>
+        <p>Branches: short and long forms<br>Comparison branches: signed, unsigned, NaN<br>Dispatch: decoded instruction index<br>Locals: supported value kinds<br>Validation: reachable stack flow and maxstack<br>Matrix: 26 entries in x86 and x64</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="../index.html">M/V <span>MirrorVM Field Notes</span></a>
+    <p>Small machines. Clear evidence.</p>
+    <div class="page-link">
+      <button class="copy-link-button" type="button" data-copy-page-url>Copy page link</button>
+      <span class="copy-link-status" data-copy-status role="status" aria-live="polite"></span>
+    </div>
+  </footer>
+  <script src="../site.js" defer></script>
+</body>
+</html>
